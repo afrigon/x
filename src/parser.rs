@@ -110,6 +110,10 @@ impl Parser {
                 let function = self.parse_fun_declaration(input)?;
                 return Some(Declaration::FunctionDeclaration(function));
             }
+            Token::Keyword(Keyword::Extern) => {
+                let function = self.parse_fun_declaration(input)?;
+                return Some(Declaration::FunctionDeclaration(function));
+            }
             _ => None,
         }
     }
@@ -146,6 +150,24 @@ impl Parser {
             identifier,
             signature,
             body,
+        })
+    }
+
+    fn parse_extern_declaration(&self, input: &mut Peekable<Chars>) -> Option<ExternDeclaration> {
+        println!("parsing extern declaration");
+        self.lexer.next_token(input, true)?;
+        let token = self.lexer.next_token(input, true)?;
+
+        if token != Token::Keyword(Keyword::Fun) {
+            return None;
+        }
+
+        let identifier = self.parse_identifier(token)?;
+        let signature = self.parse_function_signature(input)?;
+
+        Some(ExternDeclaration {
+            identifier,
+            signature,
         })
     }
 

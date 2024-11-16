@@ -7,6 +7,8 @@ use llvm::*;
 
 use std::collections::HashMap;
 use std::ffi::CString;
+use std::os::unix::ffi::OsStrExt;
+use std::path::PathBuf;
 use std::ptr;
 
 use crate::syntax::*;
@@ -47,14 +49,12 @@ impl LLVMCodeGenVisitor {
         }
     }
 
-    pub fn emit_asm(&self) {
+    pub fn emit_asm(&self, output_file: PathBuf) {
         unsafe {
             let triple = LLVMGetDefaultTargetTriple();
             let mut error: *mut i8 = ptr::null_mut();
             let mut target: LLVMTargetRef = ptr::null_mut();
-            println!("test");
             LLVMGetTargetFromTriple(triple, &mut target, &mut error);
-            println!("test1");
 
             let target_machine = LLVMCreateTargetMachine(
                 target,
@@ -70,7 +70,7 @@ impl LLVMCodeGenVisitor {
             LLVMSetModuleDataLayout(self.module, data_layout);
             LLVMSetTarget(self.module, triple);
 
-            let filename = CString::new("main.o").unwrap();
+            let filename = CString::new(output_file.as_os_str().as_bytes()).unwrap();
 
             LLVMTargetMachineEmitToFile(
                 target_machine,
@@ -114,6 +114,7 @@ impl LLVMCodeGenVisitor {
         match node {
             Declaration::VariableDeclaration(variable) => self.visit_variable_declaration(variable),
             Declaration::FunctionDeclaration(function) => self.visit_function_declaration(function),
+            Declaration::ExternDeclaration(e) => self.visit_extern_declaration(e),
         }
     }
 
@@ -146,6 +147,28 @@ impl LLVMCodeGenVisitor {
 
             self.visit_function_body(&node.body, &node.signature, function);
             LLVMVerifyFunction(function, LLVMVerifierFailureAction::LLVMPrintMessageAction);
+        }
+    }
+
+    pub fn visit_extern_declaration(&mut self, node: &ExternDeclaration) {
+        let function_type = self.visit_function_signature(&node.signature);
+
+        unsafe {
+            let function = LLVMAddFunction(
+                self.module,
+                node.identifier.name.as_ptr() as *const _,
+                function_type,
+            );
+
+            for i in 0..node.signature.parameters.parameters.len() {
+                let param = LLVMGetParam(function, i as u32);
+                let name = node.signature.parameters.parameters[i].name.name.as_ptr() as *const _;
+                LLVMSetValueName2(
+                    param,
+                    name,
+                    node.signature.parameters.parameters[i].name.name.len() as usize,
+                );
+            }
         }
     }
 
@@ -215,8 +238,6 @@ impl LLVMCodeGenVisitor {
             }
         }
     }
-
-    pub fn visit_code_block_container(&mut self, node: &CodeBlockContainer) {}
 
     pub fn visit_statement(&mut self, node: &Statement) {}
 

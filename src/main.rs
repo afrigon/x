@@ -10,49 +10,54 @@ use codegen::LLVMCodeGenVisitor;
 use lexer::Lexer;
 use parser::Parser;
 
+use clap::{Parser as ClapParser, Subcommand};
+use std::fs;
+use std::path::PathBuf;
+
+#[derive(ClapParser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Compile a source file
+    Compile { files: Vec<PathBuf> },
+}
+
 fn main() {
-    // let input = r#"
-    //     // Compute the x'th fibonacci number.
-    //     fun fib(x) {
-    //         if x < 3 {
-    //             1
-    //         } else {
-    //             fib(x - 1) + fib(x - 2)
-    //         }
-    //     }
+    let cli = Cli::parse();
 
-    //     // This expression will compute the 40th number.
-    //     fib(40)
-    // "#;
-    let code = r#"
-        // Compute the sum of two floating point numbers.
-        fun add(x: f64, y: f64) -> f64 {
-            x + y
+    match cli.command {
+        Some(Commands::Compile { files }) => {
+            for source_file in files {
+                let code = fs::read_to_string(source_file.clone()).unwrap();
+                let mut input = code.chars().peekable();
+
+                let lexer = Lexer::new();
+                let parser = Parser::new(lexer);
+
+                let file = parser.parse(&mut input);
+                println!("{:?}", file);
+
+                println!("compiling: \n{:}", code);
+
+                let mut codegen = LLVMCodeGenVisitor::new();
+                codegen.visit_source_file(&file);
+
+                println!("");
+
+                let output_file = source_file.with_extension("o");
+
+                codegen.emit_ir();
+                codegen.emit_asm(output_file);
+                codegen.finish();
+            }
         }
-
-        fun sub(x: f64, y: f64) -> f64 {
-            x - y
+        None => {
+            println!("no command given");
         }
-
-        10 + 20
-    "#;
-
-    let mut input = code.chars().peekable();
-
-    let lexer = Lexer::new();
-    let parser = Parser::new(lexer);
-
-    let file = parser.parse(&mut input);
-    println!("{:?}", file);
-
-    println!("compiling: \n{:}", code);
-
-    let mut codegen = LLVMCodeGenVisitor::new();
-    codegen.visit_source_file(&file);
-
-    println!("");
-
-    codegen.emit_ir();
-    codegen.emit_asm();
-    codegen.finish();
+    }
 }

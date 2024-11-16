@@ -6,6 +6,7 @@ pub enum Keyword {
     Else,
     Loop,
     Match,
+    Extern,
 }
 
 #[derive(Debug, PartialEq)]

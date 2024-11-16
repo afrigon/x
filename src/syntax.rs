@@ -26,6 +26,7 @@ pub enum CodeBlockItem {
 pub enum Declaration {
     VariableDeclaration(VariableDeclaration),
     FunctionDeclaration(FunctionDeclaration),
+    ExternDeclaration(ExternDeclaration),
 }
 
 #[derive(Debug)]
@@ -39,6 +40,12 @@ pub struct FunctionDeclaration {
     pub identifier: Identifier,
     pub signature: FunctionSignature,
     pub body: CodeBlockContainer,
+}
+
+#[derive(Debug)]
+pub struct ExternDeclaration {
+    pub identifier: Identifier,
+    pub signature: FunctionSignature,
 }
 
 #[derive(Debug)]

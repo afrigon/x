@@ -29,7 +29,6 @@ impl Lexer {
                 '}' => return Some(Token::RightBrace),
                 '[' => return Some(Token::LeftBracket),
                 ']' => return Some(Token::RightBracket),
-                '_' => return Some(Token::Wildcard),
                 ',' => return Some(Token::Comma),
                 '.' => return Some(Token::Dot),
                 '+' => return Some(Token::Plus),
@@ -70,6 +69,10 @@ impl Lexer {
                     return Some(Token::Slash);
                 }
                 _ => {
+                    if c == '_' && input.peek().map_or(true, |c| !c.is_alphabetic()) {
+                        return Some(Token::Wildcard);
+                    }
+
                     if c.is_alphabetic() || c == '_' {
                         let identifier = self.next_identifier(input, c);
 
@@ -80,6 +83,7 @@ impl Lexer {
                             "else" => Some(Token::Keyword(Keyword::Else)),
                             "loop" => Some(Token::Keyword(Keyword::Loop)),
                             "match" => Some(Token::Keyword(Keyword::Match)),
+                            "extern" => Some(Token::Keyword(Keyword::Extern)),
                             _ => Some(Token::Identifier(identifier)),
                         };
                     }
