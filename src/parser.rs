@@ -275,7 +275,9 @@ impl Parser {
         println!("parsing binary expression");
 
         loop {
-            let token = self.lexer.peek_token(input, true)?;
+            let Some(token) = self.lexer.peek_token(input, true) else {
+                return Some(new_left);
+            };
 
             let Some(operator) = BinaryOperator::from_token(&token) else {
                 return Some(new_left);

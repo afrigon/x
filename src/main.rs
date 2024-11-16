@@ -27,8 +27,14 @@ fn main() {
     let code = r#"
         // Compute the sum of two floating point numbers.
         fun add(x: f64, y: f64) -> f64 {
-            x + y * 10 * 100
+            x + y
         }
+
+        fun sub(x: f64, y: f64) -> f64 {
+            x - y
+        }
+
+        10 + 20
     "#;
 
     let mut input = code.chars().peekable();
@@ -47,5 +53,6 @@ fn main() {
     println!("");
 
     codegen.emit_ir();
+    codegen.emit_asm();
     codegen.finish();
 }

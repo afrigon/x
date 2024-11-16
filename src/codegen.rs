@@ -1,9 +1,13 @@
 use llvm::analysis::*;
 use llvm::core::*;
 use llvm::prelude::*;
+use llvm::target::*;
+use llvm::target_machine::*;
 use llvm::*;
 
 use std::collections::HashMap;
+use std::ffi::CString;
+use std::ptr;
 
 use crate::syntax::*;
 
@@ -22,6 +26,12 @@ impl LLVMCodeGenVisitor {
             let builder = LLVMCreateBuilderInContext(context);
             let named_values = HashMap::<String, LLVMValueRef>::new();
 
+            LLVM_InitializeAllTargetInfos();
+            LLVM_InitializeAllTargets();
+            LLVM_InitializeAllTargetMCs();
+            LLVM_InitializeAllAsmParsers();
+            LLVM_InitializeAllAsmPrinters();
+
             Self {
                 context,
                 module,
@@ -35,6 +45,41 @@ impl LLVMCodeGenVisitor {
         unsafe {
             LLVMDumpModule(self.module);
         }
+    }
+
+    pub fn emit_asm(&self) {
+        unsafe {
+            let triple = LLVMGetDefaultTargetTriple();
+            let mut error: *mut i8 = ptr::null_mut();
+            let mut target: LLVMTargetRef = ptr::null_mut();
+            println!("test");
+            LLVMGetTargetFromTriple(triple, &mut target, &mut error);
+            println!("test1");
+
+            let target_machine = LLVMCreateTargetMachine(
+                target,
+                triple,
+                "generic\0".as_ptr() as *const _,
+                "\0".as_ptr() as *const _,
+                LLVMCodeGenOptLevel::LLVMCodeGenLevelDefault,
+                LLVMRelocMode::LLVMRelocDefault,
+                LLVMCodeModel::LLVMCodeModelDefault,
+            );
+
+            let data_layout = LLVMCreateTargetDataLayout(target_machine);
+            LLVMSetModuleDataLayout(self.module, data_layout);
+            LLVMSetTarget(self.module, triple);
+
+            let filename = CString::new("main.o").unwrap();
+
+            LLVMTargetMachineEmitToFile(
+                target_machine,
+                self.module,
+                filename.as_ptr() as *mut _,
+                LLVMCodeGenFileType::LLVMObjectFile,
+                &mut error,
+            );
+        };
     }
 
     pub fn finish(&self) {
