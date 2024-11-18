@@ -74,7 +74,9 @@ impl Parser {
 
         if let Some(token) = token {
             match token {
-                Token::Keyword(Keyword::Let) | Token::Keyword(Keyword::Fun) => {
+                Token::Keyword(Keyword::Let)
+                | Token::Keyword(Keyword::Fun)
+                | Token::Keyword(Keyword::Extern) => {
                     let declaration = self.parse_declaration(input)?;
                     return Some(CodeBlockItem::Declaration(declaration));
                 }
@@ -111,8 +113,8 @@ impl Parser {
                 return Some(Declaration::FunctionDeclaration(function));
             }
             Token::Keyword(Keyword::Extern) => {
-                let function = self.parse_fun_declaration(input)?;
-                return Some(Declaration::FunctionDeclaration(function));
+                let ext = self.parse_extern_declaration(input)?;
+                return Some(Declaration::ExternDeclaration(ext));
             }
             _ => None,
         }
@@ -154,13 +156,12 @@ impl Parser {
     }
 
     fn parse_extern_declaration(&self, input: &mut Peekable<Chars>) -> Option<ExternDeclaration> {
-        println!("parsing extern declaration");
-        self.lexer.next_token(input, true)?;
-        let token = self.lexer.next_token(input, true)?;
+        let mut token = self.lexer.next_token(input, true)?;
 
         if token != Token::Keyword(Keyword::Fun) {
             return None;
         }
+        token = self.lexer.next_token(input, true)?;
 
         let identifier = self.parse_identifier(token)?;
         let signature = self.parse_function_signature(input)?;
@@ -277,13 +278,82 @@ impl Parser {
         println!("{:?}", token);
 
         match token {
-            Token::Identifier(name) => Some(Expression::Identifier(Identifier { name })),
+            Token::Identifier(name) => {
+                let Some(token) = self.lexer.peek_token(input, true) else {
+                    return Some(Expression::Identifier(Identifier { name }));
+                };
+
+                if token == Token::LeftParen {
+                    self.lexer.next_token(input, true);
+                    let arguments = self.parse_tuple(input)?;
+
+                    return Some(Expression::FunctionCall(FunctionCallExpression {
+                        function: Identifier { name },
+                        arguments,
+                    }));
+                }
+
+                Some(Expression::Identifier(Identifier { name }))
+            }
             Token::Number(value) => Some(Expression::FloatNumberLiteral(value)),
+            Token::Keyword(Keyword::True) => Some(Expression::BooleanLiteral(true)),
+            Token::Keyword(Keyword::False) => Some(Expression::BooleanLiteral(false)),
+            Token::Keyword(Keyword::If) => self
+                .parse_if_expression(input)
+                .map(|if_expr| Expression::If(if_expr)),
             Token::LeftParen => self
                 .parse_tuple(input)
                 .map(|tuple| Expression::Tuple(tuple)),
             _ => None,
         }
+    }
+
+    fn parse_if_expression(&self, input: &mut Peekable<Chars>) -> Option<IfExpression> {
+        let condition = self.parse_expression(input)?;
+        let then_expression = self.parse_expression_container(input)?;
+
+        let Some(token) = self.lexer.peek_token(input, true) else {
+            return None;
+        };
+
+        if token != Token::Keyword(Keyword::Else) {
+            return None;
+        }
+
+        self.lexer.next_token(input, true);
+
+        let else_expression = self.parse_expression_container(input)?;
+
+        Some(IfExpression {
+            condition: Box::new(condition),
+            then_expression: Box::new(then_expression),
+            else_expression: Box::new(else_expression),
+        })
+    }
+
+    fn parse_expression_container(&self, input: &mut Peekable<Chars>) -> Option<Expression> {
+        let Some(token) = self.lexer.peek_token(input, true) else {
+            return None;
+        };
+
+        if token != Token::LeftBrace {
+            return None;
+        }
+
+        self.lexer.next_token(input, true);
+        let expression = self.parse_expression(input)?;
+
+        let Some(token) = self.lexer.peek_token(input, true) else {
+            return None;
+        };
+
+        if token != Token::RightBrace {
+            return None;
+        }
+
+        self.lexer.next_token(input, true);
+
+        return Some(expression);
     }
 
     fn parse_binary_operation(

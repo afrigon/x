@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Keyword {
     Let,
     Fun,
@@ -7,9 +7,11 @@ pub enum Keyword {
     Loop,
     Match,
     Extern,
+    True,
+    False,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     Keyword(Keyword),
     Identifier(String),

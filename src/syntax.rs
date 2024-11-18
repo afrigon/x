@@ -74,10 +74,27 @@ pub struct ReturnClause {
 #[derive(Debug)]
 pub enum Expression {
     Identifier(Identifier),
+    FunctionCall(FunctionCallExpression),
+    BooleanLiteral(bool),
     FloatNumberLiteral(f64),
     // IntegerNumberLiteral(u64)
     BinaryOperator(BinaryOperatorExpression),
     Tuple(TupleExpression),
+    If(IfExpression),
+    // MatchExpression
+}
+
+#[derive(Debug)]
+pub struct IfExpression {
+    pub condition: Box<Expression>,
+    pub then_expression: Box<Expression>,
+    pub else_expression: Box<Expression>,
+}
+
+#[derive(Debug)]
+pub struct FunctionCallExpression {
+    pub function: Identifier,
+    pub arguments: TupleExpression,
 }
 
 #[derive(Debug)]
@@ -128,8 +145,9 @@ pub struct ExpressionList {
 
 #[derive(Debug)]
 pub enum Statement {
-    // IfExpression
-    // MatchExpression
+    // return
+    // break
+    // continue
 }
 
 #[derive(Debug)]

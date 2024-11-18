@@ -1,5 +1,5 @@
-fun _main() -> f64 {
-    let x := 10
-    x + 20
-    x * (10 + 20) * 2
+extern fun print(value: f64)
+
+fun main() {
+    print(if false { 100 } else { 200 })
 }

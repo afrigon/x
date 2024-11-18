@@ -13,11 +13,18 @@ use std::ptr;
 
 use crate::syntax::*;
 
+pub struct FunctionRef {
+    pub name: String,
+    pub function_type: LLVMTypeRef,
+    pub function_ref: LLVMValueRef,
+}
+
 pub struct LLVMCodeGenVisitor {
     context: *mut LLVMContext,
     module: *mut LLVMModule,
     builder: *mut LLVMBuilder,
     named_values: HashMap<String, LLVMValueRef>,
+    function_table: HashMap<String, FunctionRef>,
 }
 
 impl LLVMCodeGenVisitor {
@@ -27,6 +34,7 @@ impl LLVMCodeGenVisitor {
             let module = LLVMModuleCreateWithNameInContext("main\0".as_ptr() as *const _, context);
             let builder = LLVMCreateBuilderInContext(context);
             let named_values = HashMap::<String, LLVMValueRef>::new();
+            let function_table = HashMap::<String, FunctionRef>::new();
 
             LLVM_InitializeAllTargetInfos();
             LLVM_InitializeAllTargets();
@@ -39,6 +47,7 @@ impl LLVMCodeGenVisitor {
                 module,
                 builder,
                 named_values,
+                function_table,
             }
         }
     }
@@ -91,8 +100,22 @@ impl LLVMCodeGenVisitor {
     }
 
     pub fn visit_source_file(&mut self, node: &SourceFile) {
-        for item in &node.code_block.items {
+        self.visit_code_block(&node.code_block);
+    }
+
+    pub fn visit_code_block(&mut self, node: &CodeBlock) {
+        for item in &node.items {
             self.visit_code_block_item(item);
+        }
+    }
+
+    pub fn visit_code_block_container(&mut self, node: &CodeBlockContainer, bb: LLVMBasicBlockRef) {
+        unsafe {
+            LLVMPositionBuilderAtEnd(self.builder, bb);
+
+            for item in &node.code_block.items {
+                self.visit_code_block_item(item);
+            }
         }
     }
 
@@ -135,6 +158,15 @@ impl LLVMCodeGenVisitor {
                 function_type,
             );
 
+            self.function_table.insert(
+                node.identifier.name.clone(),
+                FunctionRef {
+                    name: node.identifier.name.clone(),
+                    function_type,
+                    function_ref: function,
+                },
+            );
+
             for i in 0..node.signature.parameters.parameters.len() {
                 let param = LLVMGetParam(function, i as u32);
                 let name = node.signature.parameters.parameters[i].name.name.as_ptr() as *const _;
@@ -158,6 +190,15 @@ impl LLVMCodeGenVisitor {
                 self.module,
                 node.identifier.name.as_ptr() as *const _,
                 function_type,
+            );
+
+            self.function_table.insert(
+                node.identifier.name.clone(),
+                FunctionRef {
+                    name: node.identifier.name.clone(),
+                    function_type,
+                    function_ref: function,
+                },
             );
 
             for i in 0..node.signature.parameters.parameters.len() {
@@ -204,11 +245,8 @@ impl LLVMCodeGenVisitor {
         function: LLVMValueRef,
     ) {
         unsafe {
-            let entry = LLVMAppendBasicBlockInContext(
-                self.context,
-                function,
-                "entry\0".as_ptr() as *const _,
-            );
+            let entry =
+                LLVMAppendBasicBlockInContext(self.context, function, "\0".as_ptr() as *const _);
             LLVMPositionBuilderAtEnd(self.builder, entry);
 
             self.named_values.clear();
@@ -217,6 +255,8 @@ impl LLVMCodeGenVisitor {
                 let value = LLVMGetParam(function, i as u32);
                 self.named_values.insert(param.name.name.clone(), value);
             }
+
+            let mut terminated = false;
 
             for i in 0..node.code_block.items.len() {
                 if i != node.code_block.items.len() - 1 {
@@ -227,14 +267,16 @@ impl LLVMCodeGenVisitor {
 
                         if signature.return_clause.is_some() {
                             LLVMBuildRet(self.builder, value);
-                        } else {
-                            LLVMBuildRetVoid(self.builder);
+                            terminated = true;
                         }
                     } else {
                         self.visit_code_block_item(&node.code_block.items[i]);
-                        LLVMBuildRetVoid(self.builder);
                     }
                 }
+            }
+
+            if !terminated {
+                LLVMBuildRetVoid(self.builder);
             }
         }
     }
@@ -243,15 +285,102 @@ impl LLVMCodeGenVisitor {
 
     pub fn visit_expression(&mut self, node: &Expression) -> LLVMValueRef {
         match node {
-            Expression::FloatNumberLiteral(value) => self.visit_float_number_literal(value),
+            Expression::BooleanLiteral(value) => self.visit_boolean_literal(*value),
+            Expression::FloatNumberLiteral(value) => self.visit_float_number_literal(*value),
             Expression::Identifier(identifier) => self.visit_identifier(identifier),
             Expression::Tuple(tuple) => self.visit_tuple(tuple),
             Expression::BinaryOperator(op) => self.visit_binary_operator_expression(op),
+            Expression::FunctionCall(function_call) => self.visit_function_call(function_call),
+            Expression::If(if_expression) => self.visit_if_expression(if_expression),
         }
     }
 
-    pub fn visit_float_number_literal(&self, value: &f64) -> LLVMValueRef {
-        unsafe { LLVMConstReal(LLVMDoubleTypeInContext(self.context), *value) }
+    pub fn visit_if_expression(&mut self, node: &IfExpression) -> LLVMValueRef {
+        unsafe {
+            let condition = self.visit_expression(&node.condition);
+            let bb = LLVMGetBasicBlockParent(LLVMGetInsertBlock(self.builder));
+
+            let mut then_bb =
+                LLVMAppendBasicBlockInContext(self.context, bb, "\0".as_ptr() as *const _);
+            let mut else_bb =
+                LLVMAppendBasicBlockInContext(self.context, bb, "\0".as_ptr() as *const _);
+            let merge_bb =
+                LLVMAppendBasicBlockInContext(self.context, bb, "\0".as_ptr() as *const _);
+
+            LLVMBuildCondBr(self.builder, condition, then_bb, else_bb);
+
+            LLVMPositionBuilderAtEnd(self.builder, then_bb);
+            let mut then_value = self.visit_expression(&node.then_expression);
+            LLVMBuildBr(self.builder, merge_bb);
+
+            LLVMPositionBuilderAtEnd(self.builder, else_bb);
+            let mut else_value = self.visit_expression(&node.else_expression);
+            LLVMBuildBr(self.builder, merge_bb);
+
+            LLVMPositionBuilderAtEnd(self.builder, merge_bb);
+            let phi = LLVMBuildPhi(
+                self.builder,
+                LLVMDoubleTypeInContext(self.context), // TODO: double for now but should be type checked
+                "\0".as_ptr() as *const _,
+            );
+
+            LLVMAddIncoming(phi, &mut then_value, &mut then_bb, 1);
+            LLVMAddIncoming(phi, &mut else_value, &mut else_bb, 1);
+
+            phi
+        }
+    }
+
+    pub fn visit_function_call(&mut self, node: &FunctionCallExpression) -> LLVMValueRef {
+        unsafe {
+            let function_ref = self
+                .function_table
+                .get(&node.function.name)
+                .expect(format!("Function {:?} not registered", node.function.name).as_str());
+
+            let function_type = function_ref.function_type;
+            let function = function_ref.function_ref;
+
+            let param_count = LLVMCountParams(function_ref.function_ref);
+
+            let mut args: Vec<LLVMValueRef> = node
+                .arguments
+                .expressions
+                .items
+                .iter()
+                .map(|arg| self.visit_expression(arg))
+                .collect::<Vec<_>>();
+
+            let llvm_name = CString::new("").unwrap();
+
+            LLVMDumpValue(function);
+            LLVMDumpType(function_type);
+            dbg!(param_count);
+
+            LLVMBuildCall2(
+                self.builder,
+                function_type,
+                function,
+                args.as_mut_ptr(),
+                param_count,
+                llvm_name.as_ptr() as *mut _,
+            )
+        }
+    }
+
+    pub fn visit_boolean_literal(&self, value: bool) -> LLVMValueRef {
+        unsafe {
+            LLVMConstInt(
+                LLVMInt1TypeInContext(self.context),
+                if value { 1 } else { 0 },
+                0,
+            )
+        }
+    }
+
+    pub fn visit_float_number_literal(&self, value: f64) -> LLVMValueRef {
+        println!("creating ssa var: {}", value);
+        unsafe { LLVMConstReal(LLVMDoubleTypeInContext(self.context), value) }
     }
 
     pub fn visit_identifier(&mut self, identifier: &Identifier) -> LLVMValueRef {
@@ -276,16 +405,16 @@ impl LLVMCodeGenVisitor {
         unsafe {
             match node.operator {
                 BinaryOperator::Add => {
-                    LLVMBuildFAdd(self.builder, lhs, rhs, "add\0".as_ptr() as *const _)
+                    LLVMBuildFAdd(self.builder, lhs, rhs, "\0".as_ptr() as *const _)
                 }
                 BinaryOperator::Subtract => {
-                    LLVMBuildFSub(self.builder, lhs, rhs, "sub\0".as_ptr() as *const _)
+                    LLVMBuildFSub(self.builder, lhs, rhs, "\0".as_ptr() as *const _)
                 }
                 BinaryOperator::Multiply => {
-                    LLVMBuildFMul(self.builder, lhs, rhs, "mul\0".as_ptr() as *const _)
+                    LLVMBuildFMul(self.builder, lhs, rhs, "\0".as_ptr() as *const _)
                 }
                 BinaryOperator::Divide => {
-                    LLVMBuildFDiv(self.builder, lhs, rhs, "div\0".as_ptr() as *const _)
+                    LLVMBuildFDiv(self.builder, lhs, rhs, "\0".as_ptr() as *const _)
                 }
             }
         }

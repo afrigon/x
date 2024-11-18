@@ -3,6 +3,9 @@ use crate::token::{Keyword, Token};
 use std::iter::Peekable;
 use std::str::Chars;
 
+static TEST: u32 = 10;
+const test: u32 = 10;
+
 pub struct Lexer {}
 
 impl Lexer {
@@ -11,7 +14,9 @@ impl Lexer {
     }
 
     pub fn peek_token(&self, input: &Peekable<Chars>, ignore_new_line: bool) -> Option<Token> {
-        let mut input_clone = input.clone(); // probably a bad idea to copy the entire input
+        // probably a bad idea to copy the entire input
+        // should be using a peekable of tokens instead
+        let mut input_clone = input.clone();
         self.next_token(&mut input_clone, ignore_new_line)
     }
 
@@ -84,6 +89,8 @@ impl Lexer {
                             "loop" => Some(Token::Keyword(Keyword::Loop)),
                             "match" => Some(Token::Keyword(Keyword::Match)),
                             "extern" => Some(Token::Keyword(Keyword::Extern)),
+                            "true" => Some(Token::Keyword(Keyword::True)),
+                            "false" => Some(Token::Keyword(Keyword::False)),
                             _ => Some(Token::Identifier(identifier)),
                         };
                     }

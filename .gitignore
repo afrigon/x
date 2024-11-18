@@ -1,1 +1,10 @@
 /target
+*.o
+*.x
+*.c
+*.a
+*.dylib
+*.so
+*.exe
+main
+
