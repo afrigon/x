@@ -9,6 +9,13 @@ pub enum Keyword {
     Extern,
     True,
     False,
+    Nil,
+    Enum,
+    Type,
+    Proto,
+    Return,
+    Break,
+    Continue,
 }
 
 #[derive(Debug, PartialEq, Clone)]

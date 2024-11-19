@@ -1,7 +1,9 @@
+use crate::syntax::TypeSyntax;
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Symbol {
     pub name: String,
-    // symbol_type: Type,
+    pub symbol_type: Type,
 }
 
 #[derive(Default)]
@@ -9,8 +11,52 @@ pub struct Scope {
     symbols: Vec<Symbol>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum Type {
+    Void,
+    Identifier(String),
+    Function(TypeFunction),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct TypeFunction {
+    pub parameters: Vec<TypeFunctionParameter>,
+    pub return_type: Box<Type>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct TypeFunctionParameter {
+    pub label: String,
+    pub name: String,
+    pub ty: Type,
+}
+
+impl TypeFunctionParameter {
+    pub fn new(label: Option<String>, name: String, ty: Type) -> Self {
+        Self {
+            label: label.unwrap_or(name.clone()),
+            name,
+            ty,
+        }
+    }
+}
+
+impl From<TypeSyntax> for Type {
+    fn from(value: TypeSyntax) -> Self {
+        match value {
+            TypeSyntax::IdentifierType(identifier) => Type::Identifier(identifier.name),
+        }
+    }
+}
+
+pub struct TypeDefinition {
+    name: String,
+    // methods: HashMap<String, >,
+}
+
 pub struct Context {
     scopes: Vec<Scope>,
+    types: Vec<TypeDefinition>,
 }
 
 impl Context {
@@ -18,7 +64,9 @@ impl Context {
         let mut scopes = Vec::new();
         scopes.push(Scope::default()); // Global scope
 
-        Self { scopes }
+        let types = vec![]; // TODO: fill this with primitive types ?
+
+        Self { scopes, types }
     }
 
     pub fn enter_scope(&mut self) {

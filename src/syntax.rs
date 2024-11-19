@@ -27,6 +27,37 @@ pub enum Declaration {
     VariableDeclaration(VariableDeclaration),
     FunctionDeclaration(FunctionDeclaration),
     ExternDeclaration(ExternDeclaration),
+    TypeDeclaration(TypeDeclaration),
+    EnumDeclaration(EnumDeclaration),
+}
+
+#[derive(Debug)]
+pub struct TypeDeclaration {
+    pub name: Identifier,
+    pub container: MemberBlockContainer,
+}
+
+#[derive(Debug)]
+pub struct EnumDeclaration {
+    pub name: Identifier,
+    pub container: MemberBlockContainer,
+}
+
+#[derive(Debug)]
+pub struct MemberBlockContainer {
+    pub member_block: MemberBlock,
+}
+
+#[derive(Debug)]
+pub struct MemberBlock {
+    pub members: Vec<MemberBlockItem>,
+}
+
+#[derive(Debug)]
+pub enum MemberBlockItem {
+    // EnumCaseDeclaration(EnumCaseDeclaration),
+    VariableDeclaration(VariableDeclaration),
+    FunctionDeclaration(FunctionDeclaration),
 }
 
 #[derive(Debug)]
@@ -63,7 +94,7 @@ pub struct FunctionParameters {
 pub struct FunctionParameter {
     pub label: Option<Identifier>,
     pub name: Identifier,
-    pub parameter_type: Option<TypeSyntax>,
+    pub parameter_type: TypeSyntax,
 }
 
 #[derive(Debug)]
@@ -77,6 +108,7 @@ pub enum Expression {
     FunctionCall(FunctionCallExpression),
     BooleanLiteral(bool),
     FloatNumberLiteral(f64),
+    NilLiteral,
     // IntegerNumberLiteral(u64)
     BinaryOperator(BinaryOperatorExpression),
     Tuple(TupleExpression),
@@ -150,12 +182,12 @@ pub enum Statement {
     // continue
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Identifier {
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeSyntax {
     IdentifierType(Identifier),
 }

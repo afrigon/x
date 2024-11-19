@@ -76,11 +76,16 @@ impl Parser {
             match token {
                 Token::Keyword(Keyword::Let)
                 | Token::Keyword(Keyword::Fun)
-                | Token::Keyword(Keyword::Extern) => {
+                | Token::Keyword(Keyword::Extern)
+                | Token::Keyword(Keyword::Enum)
+                | Token::Keyword(Keyword::Type) => {
                     let declaration = self.parse_declaration(input)?;
                     return Some(CodeBlockItem::Declaration(declaration));
                 }
-                Token::Keyword(Keyword::Loop) => {
+                Token::Keyword(Keyword::Loop)
+                | Token::Keyword(Keyword::Return)
+                | Token::Keyword(Keyword::Break)
+                | Token::Keyword(Keyword::Continue) => {
                     let statement = self.parse_statement(input)?;
                     return Some(CodeBlockItem::Statement(statement));
                 }
@@ -116,6 +121,107 @@ impl Parser {
                 let ext = self.parse_extern_declaration(input)?;
                 return Some(Declaration::ExternDeclaration(ext));
             }
+            Token::Keyword(Keyword::Enum) => {
+                let ext = self.parse_enum_declaration(input)?;
+                return Some(Declaration::EnumDeclaration(ext));
+            }
+            Token::Keyword(Keyword::Type) => {
+                let ext = self.parse_type_declaration(input)?;
+                return Some(Declaration::TypeDeclaration(ext));
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_enum_declaration(&self, input: &mut Peekable<Chars>) -> Option<EnumDeclaration> {
+        let token = self.lexer.next_token(input, true)?;
+
+        Some(EnumDeclaration {
+            name: self.parse_identifier(token)?,
+            container: self.parse_member_block_container(input)?,
+        })
+    }
+
+    fn parse_type_declaration(&self, input: &mut Peekable<Chars>) -> Option<TypeDeclaration> {
+        let token = self.lexer.next_token(input, true)?;
+
+        Some(TypeDeclaration {
+            name: self.parse_identifier(token)?,
+            container: self.parse_member_block_container(input)?,
+        })
+    }
+
+    fn parse_member_block_container(
+        &self,
+        input: &mut Peekable<Chars>,
+    ) -> Option<MemberBlockContainer> {
+        let mut token = self.lexer.peek_token(input, true)?;
+
+        if token != Token::LeftBrace {
+            return None;
+        }
+
+        self.lexer.next_token(input, true)?;
+
+        let member_block = self.parse_member_block(input);
+
+        token = self.lexer.peek_token(input, true)?;
+
+        if token != Token::RightBrace {
+            return None;
+        }
+
+        self.lexer.next_token(input, true);
+
+        Some(MemberBlockContainer { member_block })
+    }
+
+    fn parse_member_block(&self, input: &mut Peekable<Chars>) -> MemberBlock {
+        let mut members = Vec::new();
+
+        loop {
+            let Some(token) = self.lexer.peek_token(input, true) else {
+                break;
+            };
+
+            if token == Token::RightBrace {
+                break;
+            }
+
+            self.lexer.next_token(input, true);
+
+            let Some(member) = self.parse_member_item(input) else {
+                break;
+            };
+
+            members.push(member);
+        }
+
+        MemberBlock { members }
+    }
+
+    fn parse_member_item(&self, input: &mut Peekable<Chars>) -> Option<MemberBlockItem> {
+        let token = self.lexer.next_token(input, true)?;
+
+        match token {
+            // TODO: add case for "case"
+            Token::Keyword(Keyword::Let) => {
+                let variable = self.parse_let_declaration(input)?;
+                return Some(MemberBlockItem::VariableDeclaration(variable));
+            }
+            Token::Keyword(Keyword::Fun) => {
+                // TODO: add cases for init
+                let function = self.parse_fun_declaration(input)?;
+                return Some(MemberBlockItem::FunctionDeclaration(function));
+            }
+            // Token::Keyword(Keyword::Enum) => {
+            //     let enumeration = self.parse_enum_declaration(input)?;
+            //     return Some(MemberBlockItem::EnumDeclaration(enumeration));
+            // }
+            // Token::Keyword(Keyword::Type) => {
+            //     let _type = self.parse_type_declaration(input)?;
+            //     return Some(MemberBlockItem::TypeDeclaration(_type));
+            // }
             _ => None,
         }
     }
@@ -223,11 +329,7 @@ impl Parser {
         token = self.lexer.peek_token(input, true)?;
 
         if token != Token::Colon {
-            return Some(FunctionParameter {
-                label: None,
-                name,
-                parameter_type: None,
-            });
+            return None;
         }
 
         self.lexer.next_token(input, true);
@@ -237,7 +339,7 @@ impl Parser {
         Some(FunctionParameter {
             label: None,
             name,
-            parameter_type: Some(parameter_type),
+            parameter_type,
         })
     }
 
@@ -301,6 +403,7 @@ impl Parser {
             Token::Keyword(Keyword::If) => self
                 .parse_if_expression(input)
                 .map(|if_expr| Expression::If(if_expr)),
+            Token::Keyword(Keyword::Nil) => Some(Expression::NilLiteral),
             Token::LeftParen => self
                 .parse_tuple(input)
                 .map(|tuple| Expression::Tuple(tuple)),

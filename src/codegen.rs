@@ -138,6 +138,7 @@ impl LLVMCodeGenVisitor {
             Declaration::VariableDeclaration(variable) => self.visit_variable_declaration(variable),
             Declaration::FunctionDeclaration(function) => self.visit_function_declaration(function),
             Declaration::ExternDeclaration(e) => self.visit_extern_declaration(e),
+            _ => unimplemented!(),
         }
     }
 
@@ -292,6 +293,7 @@ impl LLVMCodeGenVisitor {
             Expression::BinaryOperator(op) => self.visit_binary_operator_expression(op),
             Expression::FunctionCall(function_call) => self.visit_function_call(function_call),
             Expression::If(if_expression) => self.visit_if_expression(if_expression),
+            _ => unimplemented!(),
         }
     }
 

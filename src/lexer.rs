@@ -91,6 +91,13 @@ impl Lexer {
                             "extern" => Some(Token::Keyword(Keyword::Extern)),
                             "true" => Some(Token::Keyword(Keyword::True)),
                             "false" => Some(Token::Keyword(Keyword::False)),
+                            "nil" => Some(Token::Keyword(Keyword::Nil)),
+                            "enum" => Some(Token::Keyword(Keyword::Enum)),
+                            "type" => Some(Token::Keyword(Keyword::Type)),
+                            "proto" => Some(Token::Keyword(Keyword::Proto)),
+                            "return" => Some(Token::Keyword(Keyword::Return)),
+                            "break" => Some(Token::Keyword(Keyword::Break)),
+                            "continue" => Some(Token::Keyword(Keyword::Continue)),
                             _ => Some(Token::Identifier(identifier)),
                         };
                     }
