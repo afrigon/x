@@ -11,3 +11,14 @@ run = "cargo build"
 [tasks.run]
 description = "Run the compiler"
 run = "cargo run --"
+
+[tasks.example]
+description = "Compile and link the example program"
+run = [
+    "cargo run -- compile main.x",
+    "clang -o main main.o",
+]
+
+[tasks.clean]
+description = "Remove example program artifacts"
+run = "rm -f main main.o"
