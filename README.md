@@ -12,7 +12,7 @@ language lives in [doc/overview.md](doc/overview.md).
 Building requires Rust and LLVM 18.
 
 ```sh
-cargo build
+mise run build
 ```
 
 ## Usage
@@ -21,7 +21,7 @@ The `compile` command turns each `.x` source file into an object file written
 next to it:
 
 ```sh
-cargo run -- compile main.x
+mise run run -- compile main.x
 ```
 
 Link the resulting object file with a C toolchain to produce an executable:
