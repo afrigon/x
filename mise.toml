@@ -3,3 +3,11 @@ lockfile = true
 
 [tools]
 rust = "1"
+
+[tasks.build]
+description = "Build the compiler"
+run = "cargo build"
+
+[tasks.run]
+description = "Run the compiler"
+run = "cargo run --"
