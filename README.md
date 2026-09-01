@@ -21,7 +21,7 @@ The `compile` command turns each `.x` source file into an object file written
 next to it:
 
 ```sh
-mise run run -- compile main.x
+mise run x -- compile main.x
 ```
 
 Link the resulting object file with a C toolchain to produce an executable:
