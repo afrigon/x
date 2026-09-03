@@ -32,7 +32,6 @@
 | **Scope strategy** | Minimal compiler-complete subset first | Just enough language to write a compiler; grow features in `x` after self-hosting. If the bootstrap compiler can be written without a feature, the feature waits. |
 | **Dependencies** | LLVM only, for `x` itself | The bootstrap may use Cargo crates freely. Everything else is re-implemented in `x`. |
 | **Self-hosting strategy** | Stage-by-stage rewrite with cross-validation | Each stage is rewritten in `x` and validated against the Rust version before the next; both coexist during the transition. |
-| **Bootstrap fate** | Archived under a git tag at cutover | The tag stays usable for cross-compilation and platform bring-up. |
 
 ## Compiler architecture
 
