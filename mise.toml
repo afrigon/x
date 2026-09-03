@@ -2,9 +2,9 @@
 lockfile = true
 
 [tools]
-rust = "1"
-clang = "23"
-"conda:llvm-tools" = "23"
+rust = "1.98"
+clang = "23.1"
+"conda:llvm-tools" = "23.1"
 
 [tasks.build]
 description = "Build the compiler"
