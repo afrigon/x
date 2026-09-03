@@ -2,13 +2,18 @@
 lockfile = true
 
 [tools]
-rust = "1.98"
+rust = "1"
+clang = "23"
+"conda:llvm-tools" = "23"
 
 [tasks.build]
 description = "Build the compiler"
 run = "cargo build"
 
-[tasks.x]
+[tasks.run]
 description = "Run the compiler"
 run = "cargo run --"
 
+[tasks.test]
+description = "Run the test suite"
+run = "cargo test"
