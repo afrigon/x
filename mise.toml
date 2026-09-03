@@ -1,0 +1,14 @@
+[settings]
+lockfile = true
+
+[tools]
+rust = "1.98"
+
+[tasks.build]
+description = "Build the compiler"
+run = "cargo build"
+
+[tasks.x]
+description = "Run the compiler"
+run = "cargo run --"
+
