@@ -10,7 +10,7 @@ clang = "23.1"
 description = "Build the compiler"
 run = "cargo build"
 
-[tasks.run]
+[tasks.x]
 description = "Run the compiler"
 run = "cargo run --"
 

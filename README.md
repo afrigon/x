@@ -1,8 +1,8 @@
 # x
 
-`x` is a strongly-typed, performant systems programming language inspired by Rust, Swift, and Zig. It targets operating systems, native applications, games, and embeddable runtimes, and it is designed to compile itself. This repository holds the compiler: a bootstrap written in Rust whose only job is to compile the self-hosted compiler written in `x`.
+`x` is a strongly-typed, performant systems programming language inspired by Rust, Swift, and Zig, designed to compile itself. This repository holds its compiler.
 
-The language itself is specified in [`LANGUAGE.md`](LANGUAGE.md). Engineering decisions and the compiler architecture are in [`PLAN.md`](PLAN.md).
+The language is specified in [`LANGUAGE.md`](LANGUAGE.md). Nothing in it is final: anything that does not make sense is worth flagging so the design improves. Quality is the first priority, and simplicity is never a reason to cut corners.
 
 ## Install
 
@@ -10,17 +10,10 @@ The language itself is specified in [`LANGUAGE.md`](LANGUAGE.md). Engineering de
 mise install
 ```
 
-This pulls the Rust toolchain and the LLVM tools the compiler shells out to (`llc` for code generation, `clang` for linking).
-
-## Usage
-
-```sh
-cargo run -- lex path/to/file.x
-```
-
 ## Development
 
 ```sh
 mise run build
 mise run test
+mise run x -- lex path/to/file.x
 ```

@@ -2,11 +2,11 @@
 
 The authoritative reference for what `x` looks like. Every decision below is **locked** unless explicitly marked open/deferred.
 
-Companion docs: `PLAN.md` (engineering roadmap), `CLAUDE.md` (project navigation).
+Companion document: `CLAUDE.md` (project navigation and engineering decisions).
 
 ---
 
-## 1. Overview
+## Overview
 
 `x` is a strongly-typed, performant, elegant systems language inspired by **Rust, Swift, and Zig**. Priority order: **performance → elegance → speed to self-host**.
 
@@ -61,7 +61,7 @@ fun classify(_ token: Token) -> string {
 
 ---
 
-## 2. Lexical
+## Lexical
 
 - Source extension: `.x`
 - Comments: `//` line, `///` doc (markdown body). **No `/* */`.**
@@ -69,7 +69,7 @@ fun classify(_ token: Token) -> string {
 - Identifiers: camelCase for values/functions; PascalCase for types/protocols.
 - Keywords: `let`, `mut`, `fun`, `type`, `proto`, `static`, `import`, `if`, `else`, `match`, `guard`, `loop`, `until`, `in`, `break`, `continue`, `return`, `as`, `self`, `Self`, `true`, `false`, `private`, `unsafe`, `move`.
 
-### 2.1 Naming conventions
+### Naming conventions
 
 - Values, functions, and methods are camelCase; types and protocols are PascalCase.
 - **Protocol names take the `-able` suffix when the protocol expresses a capability** ("a type that can be X-ed"): `Equatable`, `Hashable`, `Comparable`, `Displayable`, `Debugable`, `Addable`, `Subtractable`, `Multipliable`, `Divisible`, `Modable`, `Negatable`, `Shiftable`, `Indexable`, `Iterable`, `Droppable`, `Copyable`.
@@ -81,7 +81,7 @@ fun classify(_ token: Token) -> string {
 - **Method names pair with the protocol** when natural: `Displayable.display()`, `Debugable.debug()`, `Droppable.drop()`, `Iterable.iterator()`, `Iterator.next()`, `Addable.add()`, `Negatable.negate()`, `Hashable.hashValue()`. Avoid `toX`-style method names except where they are universally recognized idioms (`toString` on a string-conversion helper).
 - Marker protocols (no methods) use the capability noun directly: `Copyable {}`.
 
-### 2.2 String and character literals
+### String and character literals
 
 **Character literals** — single quotes, exactly one Unicode scalar: `'a'`, `'\n'`, `'\''`.
 
@@ -89,7 +89,7 @@ fun classify(_ token: Token) -> string {
 
 **Byte strings** — `b"..."`, type `[u8; N]`. Source content must be ASCII; use escapes for other bytes. `\xHH` reaches the full **0x00–0xFF**, and `\u{...}` is **not** allowed (a byte string is bytes, not text).
 
-**C strings** — `c"..."`, a NUL-terminated byte sequence for FFI (complements `string.cstr()`, §15.3). Non-ASCII content is UTF-8 encoded; `\xHH` (0x00–0xFF) and `\u{...}` are both allowed. A NUL in any form — `\0`, `\x00`, `\u{0}`, or a raw NUL — is an error (the terminator is implicit). Raw `b`/`c` strings (`br"..."`, `cr"..."`) are deferred; for raw multiline text use the `\\` form.
+**C strings** — `c"..."`, a NUL-terminated byte sequence for FFI (complements `string.cstr()`, see String boundary). Non-ASCII content is UTF-8 encoded; `\xHH` (0x00–0xFF) and `\u{...}` are both allowed. A NUL in any form — `\0`, `\x00`, `\u{0}`, or a raw NUL — is an error (the terminator is implicit). Raw `b`/`c` strings (`br"..."`, `cr"..."`) are deferred; for raw multiline text use the `\\` form.
 
 **Multiline strings** — a quote-less, line-prefixed form (à la Zig), type `string`. Consecutive lines that begin — after optional leading whitespace — with `\\` form a single string. The text after each `\\` is taken **verbatim** (raw — no escape processing), lines join with `\n`, and there is no trailing newline. The string ends at the first line without a `\\` marker.
 
@@ -110,11 +110,11 @@ let usage := \\usage: x <command>
 | `\xHH` | exactly 2 hex digits — **0x00–0x7F** in `"..."`/`'...'`, **0x00–0xFF** in `b"..."`/`c"..."` |
 | `\u{H…}` | Unicode scalar — 1–6 hex digits (underscores allowed between digits), ≤ 0x10FFFF, not a surrogate; not allowed in `b"..."` |
 
-Two Rust escape behaviors are deliberately omitted: a literal newline inside `"..."` (use the `\\` multiline form) and string continuation (`\` before a newline) — both are errors here. Interpolation is never implicit — use `#format` (§14.2).
+Two Rust escape behaviors are deliberately omitted: a literal newline inside `"..."` (use the `\\` multiline form) and string continuation (`\` before a newline) — both are errors here. Interpolation is never implicit — use `#format` (see `#format`).
 
 ---
 
-## 3. Primitives
+## Primitives
 
 | Type | Meaning |
 |---|---|
@@ -130,7 +130,7 @@ Default literal types when unconstrained: `i32` for integers, `f64` for floats.
 
 ---
 
-## 4. Bindings
+## Bindings
 
 ```
 let x := 5                   // immutable, type inferred as i32
@@ -149,7 +149,7 @@ Rules:
 
 ---
 
-## 5. Functions
+## Functions
 
 ```
 fun add(_ a: i32, b: i32) -> i32 {
@@ -174,7 +174,7 @@ greet(name: "Alice")
 - `return` is explicit at function-body scope.
 - Default arguments: `fun foo(x: i32 := 5)`.
 
-### 5.1 Method modifiers (postfix on `fun`)
+### Method modifiers (postfix on `fun`)
 
 | Form | Meaning | Receiver | Called as |
 |---|---|---|---|
@@ -184,11 +184,11 @@ greet(name: "Alice")
 
 `self` is implicit; write `x` not `self.x` (use `self.` only for disambiguation).
 
-### 5.2 Overloading
+### Overloading
 
 Functions and methods are identified by **name + ordered labels + parameter types**. Distinct signatures coexist; ambiguity is an error. **Exact match beats auto-wrap** (e.g., `T` overload preferred over `T?` overload).
 
-### 5.3 Closures
+### Closures
 
 Anonymous functions use Swift-style braces with an `in` marker between params and body.
 
@@ -238,11 +238,11 @@ Constraints:
 
 #### Capture semantics
 
-Closures capture surrounding bindings. The exact rules (reference vs value capture, mutability propagation, explicit captures) depend on the memory model — see §16.
+Closures capture surrounding bindings. The exact rules (reference vs value capture, mutability propagation, explicit captures) depend on the memory model — see Memory model.
 
 ---
 
-## 6. Types: records and enums
+## Types: records and enums
 
 `type` is the unified type-introducing keyword. **Body shape determines kind**:
 
@@ -280,13 +280,13 @@ Body item rules:
 
 Variant reference: `.variantName` when the enum type is known from context.
 
-### 6.1 Inline enum form
+### Inline enum form
 
 ```
 type Color { red, green, blue }
 ```
 
-### 6.2 Memberwise initializer
+### Memberwise initializer
 
 Every record auto-generates `TypeName(field1: ..., field2: ...)`. Custom constructors are `fun static` returning the type:
 
@@ -304,7 +304,7 @@ let p := Point.origin()
 let q := Point(x: 1.0, y: 2.0)
 ```
 
-### 6.3 No type aliases
+### No type aliases
 
 Every `type` introduces a fresh nominal type. To wrap an existing type, declare a new record:
 
@@ -314,13 +314,13 @@ type UserId { value: u64 }    // distinct from u64
 
 Built-in type constructors (`[T]`, `[T; N]`, `T?`, `T!E`, `List<i32>`) are **not** user-defined aliases — they're language primitives. (There are no tuples; group multiple values in a record or return a `Result`.)
 
-### 6.4 No inheritance
+### No inheritance
 
 Polymorphism comes from protocols + composition. No `extends`, no parent-child types.
 
 ---
 
-## 7. Protocols
+## Protocols
 
 ```
 proto Drawable {
@@ -350,7 +350,7 @@ type Point: Drawable, Equatable {
 
 **No extensions in v1.** A type's complete protocol conformance set is fixed at its declaration site.
 
-### 7.1 Compiler-synthesized protocols
+### Compiler-synthesized protocols
 
 For these protocols, the compiler generates field-wise implementations automatically when all fields conform:
 
@@ -362,9 +362,9 @@ If any field doesn't conform, the compile error names the offending field. All o
 
 ---
 
-## 8. Generics and opaque types
+## Generics and opaque types
 
-### 8.1 Generic functions
+### Generic functions
 
 ```
 fun maxOf<T: Comparable>(_ a: T, _ b: T) -> T {
@@ -381,7 +381,7 @@ fun render<T: Drawable + Comparable>(_ items: [T]) {
 fun pair<T: Drawable, U: Hashable>(_ a: T, _ b: U) { /* ... */ }
 ```
 
-### 8.2 Opaque types: `some Proto`
+### Opaque types: `some Proto`
 
 A concrete-but-hidden type. The caller sees the protocol; the compiler picks one concrete type per call site (monomorphized).
 
@@ -397,7 +397,7 @@ fun render(_ x: some Drawable) {        // sugar for <T: Drawable>(_ x: T)
 
 Allowed in: argument position, return position. Not allowed in: struct fields, local bindings without an initializer, container element types.
 
-### 8.3 No existentials in v1
+### No existentials in v1
 
 `Proto` cannot be used directly as a type position. For heterogeneous collections, use enums (closed-world variants):
 
@@ -421,9 +421,9 @@ let scene: [Shape] := [.circle(Circle(radius: 1.0)), .square(Square(side: 2.0))]
 
 ---
 
-## 9. Control flow
+## Control flow
 
-### 9.1 `if` / `else`
+### `if` / `else`
 
 `if` is an **expression** in expression position, a **statement** otherwise. Branches must produce the same type when used as expression.
 
@@ -439,7 +439,7 @@ if user.isAdmin {
 }
 ```
 
-### 9.2 `match`
+### `match`
 
 ```
 match token {
@@ -462,7 +462,7 @@ let label := match score {
 - Arms separated by newlines; arm body is an expression or a `{ ... }` block.
 - Match expressions require exhaustiveness (or `_` wildcard).
 
-### 9.3 `guard`
+### `guard`
 
 Early-return form. The `else` block **must end in a divergent statement** (`return`, `break`, `continue`, `@panic(...)`).
 
@@ -479,7 +479,7 @@ fun process(_ optional: User?) -> string!IoError {
 }
 ```
 
-### 9.4 Loops
+### Loops
 
 One keyword (`loop`), three forms:
 
@@ -510,7 +510,7 @@ loop item in collection {           // iteration over anything iterable
 > **Deferred.** The `@name` label form below is provisional (it collides
 > visually with `@attribute` macros) and is not part of the bootstrap subset.
 > Plain `break`/`continue` (innermost loop only) are. Tagged `break @name` /
-> `continue @name` require the labeled-loop syntax to be locked (§17).
+> `continue @name` require the labeled-loop syntax to be locked (see Open decisions).
 
 ```
 loop @search row in grid {
@@ -522,7 +522,7 @@ loop @search row in grid {
 
 Only named loops can be the target of a tagged `break`/`continue`.
 
-### 9.5 Blocks as expressions
+### Blocks as expressions
 
 A `{ ... }` block in expression position evaluates to its **last expression** — no `return` keyword needed (which would exit the enclosing function instead).
 
@@ -535,7 +535,7 @@ let area := {
 
 ---
 
-## 10. Optionals and Results
+## Optionals and Results
 
 Sugar:
 
@@ -544,7 +544,7 @@ Sugar:
 | `T?` | `Option<T>` | `some(v)`, `none` |
 | `T!E` | `Result<T, E>` | `ok(v)`, `err(e)` |
 
-### 10.1 Auto-wrapping
+### Auto-wrapping
 
 - `T` → `T?` (as `some(_)`) in known-target-type positions. **One level only.**
 - `T` → `T!E` (as `ok(_)`) in known-target-type positions. Requires `T ≠ E`.
@@ -559,7 +559,7 @@ fun parseDigit(_ character: char) -> u8? {
 }
 ```
 
-### 10.2 Operators
+### Optional and Result operators
 
 | Operator | Position | Meaning |
 |---|---|---|
@@ -576,11 +576,11 @@ fun loadConfig() -> Config!IoError {
 }
 ```
 
-### 10.3 No force-unwrap
+### No force-unwrap
 
 The `!` "give me the value or crash" operator is **banned**. For explicit runtime-checked unwrap, use the stdlib method `.expect("reason")` — verbose by design.
 
-### 10.4 Multi-error pattern
+### Multi-error pattern
 
 When a system may return many errors at once, use `T!List<E>`:
 
@@ -598,7 +598,7 @@ The `Result` type itself stays single-error. Multi-error = "the error type is a 
 
 ---
 
-## 11. Operators
+## Operators
 
 | Operator(s) | Mechanism |
 |---|---|
@@ -615,8 +615,8 @@ The `Result` type itself stays single-error. Multi-error = "the error type is a 
 | `&&= \|\|= ^^= <<= >>=` | Compound mutation (bitwise) |
 | `:=` | Bind / mutate |
 | `?  ?.  ??` | Option/Result operators |
-| `as` | Numeric cast (semantics open, §17) |
-| `0..10`, `0..=10` | Range (full syntax open, §17) |
+| `as` | Numeric cast (semantics open, see Open decisions) |
+| `0..10`, `0..=10` | Range (full syntax open, see Open decisions) |
 
 **Precedence** (high to low) follows **Rust**, mapped onto `x`'s symbols by role:
 
@@ -636,7 +636,7 @@ The `Result` type itself stays single-error. Multi-error = "the error type is a 
 
 This is C's shape with C's two known traps removed (as Rust does): the bitwise band sits **above** comparison — so `x && MASK = 0` is `(x && MASK) = 0`, not the C footgun — and comparisons are a single non-associative level rather than chainable. Boolean `&`/`^`/`\|` (logical, short-circuit) sit at the bottom, below comparison.
 
-**`&` is dual-role** (consistent with C's `&`): binary `a & b` is boolean AND; unary `&value` is the reference-of operator (§16.5). Position disambiguates.
+**`&` is dual-role** (consistent with C's `&`): binary `a & b` is boolean AND; unary `&value` is the reference-of operator (see References). Position disambiguates.
 
 - **Operator overloading goes through protocols.** Implement the protocol; the operator becomes available.
 - **No custom operators** — you can only implement the operators above.
@@ -644,7 +644,7 @@ This is C's shape with C's two known traps removed (as Rust does): the bitwise b
 - **No ternary `?:`.** Use `if` as an expression.
 - **No implicit numeric conversion.** `i32 + f64` is a type error; cast with `as`. Same for cross-type `=`.
 
-### 11.1 Operator → protocol mapping
+### Operator → protocol mapping
 
 | Operator | Desugars to | Protocol |
 |---|---|---|
@@ -669,7 +669,7 @@ This is C's shape with C's two known traps removed (as Rust does): the bitwise b
 | `a[i]` | `a.get(i)` | `Indexable<I, E>` |
 | `a[i] := v` | `a.set(i, v)` | `MutableIndexable<I, E>` |
 
-### 11.2 Core protocols
+### Core protocols
 
 ```
 type Ordering { less, equal, greater }
@@ -716,9 +716,9 @@ proto Hashable: Equatable {
 
 **Why `compare` returns `Ordering`:** one comparison call covers all four orderings; the compiler derives `<`, `<=`, `>`, `>=` uniformly. More efficient than four separate bool-returning methods.
 
-`Hashable`'s `hashValue() -> u64` signature is the v1 form. A streaming `hash(into: Hasher)` form is an open item (§17).
+`Hashable`'s `hashValue() -> u64` signature is the v1 form. A streaming `hash(into: Hasher)` form is an open item (see Open decisions).
 
-### 11.3 Bundles via refinement
+### Bundles via refinement
 
 ```
 proto Numeric:
@@ -748,7 +748,7 @@ Built-in conformances:
 - `char` : `Equatable + Hashable + Comparable`
 - `string` : `Equatable + Hashable + Comparable + Displayable + Debugable`
 
-### 11.4 Other stdlib protocols (not operators, but the menu)
+### Other standard library protocols
 
 ```
 proto Default {
@@ -786,7 +786,7 @@ loop {
 
 `Iterator`/`Iterable` are generic protocols in v1 (because associated types are deferred). The surface is designed to stay the same if they migrate to associated types after self-hosting.
 
-### 11.5 Compiler synthesis
+### Compiler synthesis
 
 The compiler auto-generates implementations when **all fields conform**:
 
@@ -800,13 +800,13 @@ The compiler auto-generates implementations when **all fields conform**:
 
 Other protocols require manual implementation in v1.
 
-### 11.6 Compound assignment
+### Compound assignment
 
 `a OP= b` requires `a` to be a `mut` binding and the type to conform to the corresponding protocol. Desugars to `a := a.OP(b)` semantically (compiler may optimize in-place). Full set:
 
 `+= -= *= /= %= &= |= ^= &&= ||= ^^= <<= >>=`
 
-### 11.7 What is NOT user-overloadable
+### What is NOT user-overloadable
 
 - **Boolean `&`, `|`, `!`, `^`** — work only on `bool`. Custom types cannot pretend to be boolean.
 - **Assignment `:=`** — language operator, not a method call.
@@ -816,7 +816,7 @@ Other protocols require manual implementation in v1.
 
 ---
 
-## 12. Arrays and collections
+## Arrays and collections
 
 | Form | Meaning |
 |---|---|
@@ -836,12 +836,12 @@ Other collections (`HashMap<K, V>`, `Set<T>`, etc.) live in the stdlib.
 
 ---
 
-## 13. Modules and visibility
+## Modules and visibility
 
-- **No `module` keyword.** Modules are defined by **manifest + directory** (format open, §17).
+- **No `module` keyword.** Modules are defined by **manifest + directory** (format open, see Open decisions).
 - Files within a module share visibility freely.
 - **Default visibility is public** (exported across module boundaries).
-- `private` is the only restriction modifier (scope open, §17 — file vs module).
+- `private` is the only restriction modifier (scope open, see Open decisions — file vs module).
 - `import name` brings non-private items into scope.
 - Name clashes resolve by qualifying with the module name:
 
@@ -856,16 +856,16 @@ moduleB.functionAB()
 
 ---
 
-## 14. Compile-time macros
+## Compile-time macros
 
 Compile-time directives split by role:
 
 - **`@name(...)` — attribute macros.** Decorate a declaration (function or type). They don't evaluate to a value; they modify how the declaration is treated.
 - **`#name(...)` — verb macros.** Appear in expression or statement position. Produce a value, emit code, or generate declarations.
 
-All macro arguments must parse as valid `x` expressions/calls/literals — the lexer and parser don't need special cases per macro. Compiler-builtin macros in v1; user-definable macros (after self-hosting, §17) use the same syntax.
+All macro arguments must parse as valid `x` expressions/calls/literals — the lexer and parser don't need special cases per macro. Compiler-builtin macros in v1; user-definable macros (after self-hosting, see Open decisions) use the same syntax.
 
-### 14.1 Built-in macros
+### Built-in macros
 
 **Attribute macros (`@`)** — decorate declarations:
 
@@ -888,7 +888,7 @@ All macro arguments must parse as valid `x` expressions/calls/literals — the l
 | `#panic("msg")` | Panic / abort with a (formatted) message |
 | `#assert(cond, "msg")` | Runtime check with formatted message |
 
-### 14.2 `#format`
+### `#format`
 
 String formatting. The format string is parsed at compile time; **all values come from inside the braces** — no positional args, no implicit args, no separate argument list.
 
@@ -912,9 +912,9 @@ Placeholder grammar inside `{...}`:
 
 Escape literal braces with `{{` and `}}`.
 
-String literals (`"..."` and the `\\` multiline form, §2.2) are *not* interpolated — they are exactly the text you wrote (single-line literals after escape decoding; multiline literals verbatim). Interpolation is **always** explicit via `#format`.
+String literals (`"..."` and the `\\` multiline form, see String and character literals) are *not* interpolated — they are exactly the text you wrote (single-line literals after escape decoding; multiline literals verbatim). Interpolation is **always** explicit via `#format`.
 
-### 14.3 `#if`
+### `#if`
 
 Conditional compilation at declaration scope:
 
@@ -930,7 +930,7 @@ Conditional compilation at declaration scope:
 
 Inside function bodies, plain `if` works — the compiler elides dead branches when conditions are statically known. `#if` is for declaration-level gating or to force comptime evaluation.
 
-### 14.4 `#asm`
+### `#asm`
 
 Inline assembly:
 
@@ -950,11 +950,11 @@ fun syscall1(_ number: i64, _ argument: i64) -> i64 {
 
 `in`, `out`, `clobbers` are not real functions — they're tokens the `#asm` macro interprets as operand specifications. Every argument parses as regular `x` syntax (string literals, function-call expressions).
 
-Operand model details (register allocation, dialect, side effects) are open (§17).
+Operand model details (register allocation, dialect, side effects) are open (see Open decisions).
 
 ---
 
-## 15. FFI
+## FFI
 
 Unified under the `@extern` macro. Three contexts depending on what it's attached to:
 
@@ -980,40 +980,40 @@ type Timespec {
 
 ABI tags supported in v1: `.c`. Deferred: `.rust`, `.cpp` (require ABI knowledge / name mangling).
 
-### 15.1 Variadic args
+### Variadic args
 
 `...` in extern function signatures: `fun printf(_ format: *u8, ...) -> i32`.
 
-### 15.2 Function pointer types
+### Function pointer types
 
 First-class type: `fun(T...) -> R`. Usable directly as a value type for callbacks.
 
-### 15.3 String boundary
+### String boundary
 
 `x`'s `string` is UTF-8 + length, NOT NUL-terminated. Convert at FFI boundary:
 - `string.cstr()` → `*u8` (NUL-terminated, lifetime tied to source).
 - `cstr.toString()` decodes a `*u8` into `string`.
-- A `c"..."` literal (§2.2) is a NUL-terminated byte sequence built at compile time — pass it directly where C wants a `*u8`, no runtime conversion.
+- A `c"..."` literal (see String and character literals) is a NUL-terminated byte sequence built at compile time — pass it directly where C wants a `*u8`, no runtime conversion.
 
-### 15.4 C preprocessor macros
+### C preprocessor macros
 
 NOT interoperable. Wrap on the C side with a real function and bind to that.
 
-### 15.5 Deferred: header-binding macro
+### Header-binding macro (deferred)
 
 With user-definable macros, a `@bindings(header: "stdio.h", link: "c")` macro can auto-generate `@extern` declarations from a C header at compile time — same model as Zig's `@cImport`. The language stays small; ergonomics grow through macros.
 
 ---
 
-## 16. Memory model
+## Memory model
 
-How values are owned, moved, dropped, borrowed, and allocated. v1 design; some items have an explicit evolution path (§16.13). A few details are intentionally deferred to §17 (closure-capture specifics, `Hashable` signature evolution).
+How values are owned, moved, dropped, borrowed, and allocated. v1 design; some items have an explicit evolution path (see Evolution path). A few details are intentionally deferred to see Open decisions (closure-capture specifics, `Hashable` signature evolution).
 
-### 16.1 The model in one paragraph
+### The model in one paragraph
 
 Every value has exactly one **owner** (a binding). When the binding goes out of scope, the value's destructor runs (RAII) and any heap memory it owns is freed via the allocator it remembers. Ownership **moves** on assignment or pass; sources of moves are statically invalidated. Trivially-small types are **`Copyable`** and copy instead of moving. To pass a value without transferring ownership, use a **reference** (`&T` shared, `&mut T` exclusive) — non-owning, lifetime **not statically checked in v1**. **Raw pointers** (`*T`, `*mut T`) exist for FFI and manual memory and require an `unsafe` block. **Allocators** are first-class values; stdlib heap types take an allocator as a named parameter with a build-target default.
 
-### 16.2 Ownership and moves
+### Ownership and moves
 
 ```
 let s := string.new("hello")    // s owns the buffer
@@ -1024,9 +1024,9 @@ doSomething(t)                   // OK
                                  // at end of scope, t.drop() runs, buffer freed
 ```
 
-Moves are zero-cost: a bitwise copy of the value with the source statically invalidated. The compiler refuses to read from a moved-from binding. Passing a non-`Copyable` value to a function transfers ownership; to lend without moving, pass a reference (§16.5).
+Moves are zero-cost: a bitwise copy of the value with the source statically invalidated. The compiler refuses to read from a moved-from binding. Passing a non-`Copyable` value to a function transfers ownership; to lend without moving, pass a reference (see References).
 
-### 16.3 `Copyable`
+### `Copyable`
 
 ```
 proto Copyable {}                       // marker — no methods
@@ -1051,7 +1051,7 @@ use(p)                            // still valid
 use(q)                            // also valid
 ```
 
-### 16.4 `Droppable`
+### `Droppable`
 
 ```
 proto Droppable {
@@ -1082,7 +1082,7 @@ type FileHandle: Droppable {
 }   // h.drop() runs here automatically
 ```
 
-### 16.5 References — `&T` and `&mut T`
+### References — `&T` and `&mut T`
 
 A reference is a non-owning view of a value owned elsewhere.
 
@@ -1113,11 +1113,11 @@ A reference can outlive its referent (use-after-free), and the compiler will not
 Mitigations available in v1:
 - RAII makes most lifetimes deterministic and visible (drop happens at end of scope).
 - Debug-mode runtime sanitizers (deferred).
-- Idiomatic patterns — for graph-shaped data, prefer arena + indices (§16.12).
+- Idiomatic patterns — for graph-shaped data, prefer arena + indices (see Working with trees and graphs).
 
-v2 evolution: opt-in lifetime checking that catches use-after-free *without* imposing Rust-style aliasing rules. See §16.13 and §17.
+v2 evolution: opt-in lifetime checking that catches use-after-free *without* imposing Rust-style aliasing rules. See Evolution path and Open decisions.
 
-### 16.6 Raw pointers — `*T` and `*mut T`
+### Raw pointers — `*T` and `*mut T`
 
 For FFI, manual memory, and assembly. Raw pointers can be null, can dangle, and the compiler does not help you.
 
@@ -1127,7 +1127,7 @@ For FFI, manual memory, and assembly. Raw pointers can be null, can dangle, and 
 | `*mut T` | Possibly-null pointer to mutable `T` |
 | `*void` | Untyped pointer (C `void*`) |
 
-All raw-pointer operations require an `unsafe` block (§16.10).
+All raw-pointer operations require an `unsafe` block (see `unsafe` blocks).
 
 ```
 @extern(.c) fun malloc(_ size: usize) -> *void
@@ -1142,7 +1142,7 @@ unsafe {
 
 `as` performs raw casts inside `unsafe` (pointer casts, numeric-to-pointer, etc.).
 
-### 16.7 `Allocator`
+### `Allocator`
 
 ```
 proto Allocator {
@@ -1162,7 +1162,7 @@ Stdlib allocator menu:
 - **`FixedBufferAllocator`** — allocates from a stack/static buffer; needs no heap; works at literal-`t=0` boot before any real allocator exists.
 - **`PageAllocator`** — raw OS or kernel pages; bottom of the stack.
 
-### 16.8 Default allocator + override
+### Default allocator + override
 
 Heap stdlib types take the allocator as a **named parameter with a default**:
 
@@ -1179,7 +1179,7 @@ let temp := List<i32>.new(in: arena)         // override per-allocation
 
 This is what makes **bare-metal and userspace use the same stdlib**: identical code runs in both; only the `defaultAllocator` setup differs.
 
-### 16.9 Closure captures
+### Closure captures
 
 Closures capture surrounding bindings based on the binding's type and mutability:
 
@@ -1201,11 +1201,11 @@ Rules:
 - **Non-`Copyable` mutable bindings** → captured by `&mut T`.
 - **`move { params in body }`** — prefix keyword that forces capture-by-value (ownership transfer) for non-Copyable captures.
 
-Same v1 caveat as references: a closure that escapes the lifetime of its captures and is later invoked is undefined behavior. The compiler does not statically prevent this. The capture-rule specifics (e.g., escape detection, partial captures, capture lists Swift-style) are open items (§17).
+Same v1 caveat as references: a closure that escapes the lifetime of its captures and is later invoked is undefined behavior. The compiler does not statically prevent this. The capture-rule specifics (e.g., escape detection, partial captures, capture lists Swift-style) are open items (see Open decisions).
 
 `move` is a contextual keyword that appears only immediately before a closure brace.
 
-### 16.10 `unsafe` blocks and `@unsafe`
+### `unsafe` blocks and `@unsafe`
 
 Two complementary mechanisms:
 
@@ -1237,9 +1237,9 @@ Operations that require `unsafe`:
 
 `unsafe { expr }` is an **expression** that evaluates to whatever `expr` evaluates to; it just lifts the safety restriction in scope. Granularity is block-level, not expression-level — write `unsafe { ... }` around the whole region rather than tagging individual sub-expressions.
 
-### 16.11 `Box<T>` and other owning containers
+### `Box<T>` and other owning containers
 
-`Box<T>` is the stdlib type for "owned heap pointer to T." Used when a value needs a stable address (trees with parent refs — §16.12), or when recursive structures need indirection:
+`Box<T>` is the stdlib type for "owned heap pointer to T." Used when a value needs a stable address (trees with parent refs — see Working with trees and graphs), or when recursive structures need indirection:
 
 ```
 type Tree {
@@ -1261,7 +1261,7 @@ Other owning containers in the stdlib (not all v1):
 
 v1 ships `Box<T>` and the core collections (`List<T>`, `string`, `HashMap<K, V>`, `Set<T>`).
 
-### 16.12 Working with trees and graphs
+### Working with trees and graphs
 
 Three idiomatic patterns; pick by use case.
 
@@ -1311,7 +1311,7 @@ type Tree {
 ```
 All nodes live in one flat list; cross-references are integer indices. No dangling possible; cache-friendly. The pattern compilers use internally for ASTs and symbol tables.
 
-### 16.13 Evolution path
+### Evolution path
 
 All additive — none breaks v1 code:
 
@@ -1322,7 +1322,7 @@ All additive — none breaks v1 code:
 
 ---
 
-## 17. Open / deferred decisions
+## Open decisions
 
 These are explicitly unsettled.
 
@@ -1342,4 +1342,4 @@ These are explicitly unsettled.
 | **Inline asm mechanics** | Operand binding model, dialects |
 | **C `int`/`long`/`size_t`** | Stdlib aliases module |
 | **Stdlib design** | Whole subject, post-language-design |
-| **`@bindings` header macro** | Deferred (§15.5); needs `@` → `#` re-classification alongside user-definable macros |
+| **`@bindings` header macro** | Deferred (see Header-binding macro); needs `@` → `#` re-classification alongside user-definable macros |
