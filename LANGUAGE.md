@@ -29,9 +29,9 @@ type Point: Equatable, Hashable {
         return (x*x + y*y).sqrt()
     }
 
-    fun mut translate(by v: Vector) {
-        x := x + v.x
-        y := y + v.y
+    fun mut translate(by vector: Vector) {
+        x := x + vector.x
+        y := y + vector.y
     }
 }
 
@@ -42,15 +42,15 @@ type Token {
     minus
 }
 
-fun parseDigit(_ c: char) -> u8? {
-    if c >= '0' & c <= '9' {
-        return c - '0'          // auto-wraps to some(...)
+fun parseDigit(_ character: char) -> u8? {
+    if character >= '0' & character <= '9' {
+        return character - '0'          // auto-wraps to some(...)
     }
     return none
 }
 
-fun classify(_ tok: Token) -> string {
-    return match tok {
+fun classify(_ token: Token) -> string {
+    return match token {
         .ident(name) -> #format("identifier: {name}")
         .number(n)   -> #format("number: {n}")
         .plus        -> "+"
@@ -69,7 +69,19 @@ fun classify(_ tok: Token) -> string {
 - Identifiers: camelCase for values/functions; PascalCase for types/protocols.
 - Keywords: `let`, `mut`, `fun`, `type`, `proto`, `static`, `import`, `if`, `else`, `match`, `guard`, `loop`, `until`, `in`, `break`, `continue`, `return`, `as`, `self`, `Self`, `true`, `false`, `private`, `unsafe`, `move`.
 
-### 2.1 String and character literals
+### 2.1 Naming conventions
+
+- Values, functions, and methods are camelCase; types and protocols are PascalCase.
+- **Protocol names take the `-able` suffix when the protocol expresses a capability** ("a type that can be X-ed"): `Equatable`, `Hashable`, `Comparable`, `Displayable`, `Debugable`, `Addable`, `Subtractable`, `Multipliable`, `Divisible`, `Modable`, `Negatable`, `Shiftable`, `Indexable`, `Iterable`, `Droppable`, `Copyable`.
+- **Drop the `-able` when it reads awkwardly or the name is a noun**:
+  - Actor / role nouns: `Iterator`, `Allocator`, `Hasher`.
+  - Bundle / category protocols: `Numeric`, `Integer`, `FloatingPoint`, `Bitwise`.
+  - Bitwise operation protocols where `-able` would be ugly: `BitwiseAnd`, `BitwiseOr`, `BitwiseXor`, `BitwiseNot`.
+  - Markers / specific abilities where the noun reads cleaner: `Default`.
+- **Method names pair with the protocol** when natural: `Displayable.display()`, `Debugable.debug()`, `Droppable.drop()`, `Iterable.iterator()`, `Iterator.next()`, `Addable.add()`, `Negatable.negate()`, `Hashable.hashValue()`. Avoid `toX`-style method names except where they are universally recognized idioms (`toString` on a string-conversion helper).
+- Marker protocols (no methods) use the capability noun directly: `Copyable {}`.
+
+### 2.2 String and character literals
 
 **Character literals** — single quotes, exactly one Unicode scalar: `'a'`, `'\n'`, `'\''`.
 
@@ -108,7 +120,7 @@ Two Rust escape behaviors are deliberately omitted: a literal newline inside `".
 |---|---|
 | `i8` `i16` `i32` `i64` | Signed integers |
 | `u8` `u16` `u32` `u64` | Unsigned integers |
-| `usize` `isize` | Platform pointer-sized (TBD details) |
+| `usize` `isize` | Platform pointer-sized (exact semantics open) |
 | `f32` `f64` | IEEE 754 floats |
 | `bool` | Boolean (`true` / `false`) |
 | `char` | Unicode codepoint |
@@ -188,7 +200,7 @@ let g := { () in handle() }                        // zero-arg, explicit form
 
 items.map { x in x * 2 }
 items.sort { a, b in a.compare(b) }
-items.fold(initial: 0) { acc, x in acc + x }
+items.fold(initial: 0) { sum, x in sum + x }
 
 items.map { x in
     let y := x * 2
@@ -215,7 +227,7 @@ When a call's **last argument** is a closure, the closure may be written outside
 
 ```
 items.map { x in x * 2 }                            // parens omitted (only arg)
-items.fold(initial: 0) { acc, x in acc + x }        // last arg is trailing
+items.fold(initial: 0) { sum, x in sum + x }        // last arg is trailing
 button.onClick { () in handle() }
 ```
 
@@ -416,7 +428,7 @@ let scene: [Shape] := [.circle(Circle(radius: 1.0)), .square(Square(side: 2.0))]
 `if` is an **expression** in expression position, a **statement** otherwise. Branches must produce the same type when used as expression.
 
 ```
-let absVal := if n < 0 { -n } else { n }
+let absolute := if n < 0 { -n } else { n }
 
 if user.isAdmin {
     grantAccess()
@@ -460,8 +472,8 @@ fun divide(_ a: i32, by b: i32) -> i32? {
     return some(a / b)
 }
 
-fun process(_ opt: User?) -> string!IoError {
-    guard let user := opt else { return err(.notFound) }
+fun process(_ optional: User?) -> string!IoError {
+    guard let user := optional else { return err(.notFound) }
     // `user` is the unwrapped User from here on
     return ok(user.name)
 }
@@ -473,9 +485,9 @@ One keyword (`loop`), three forms:
 
 ```
 loop {                              // infinite — escape with break
-    let cmd := readCommand()
-    if cmd = .quit { break }
-    process(cmd)
+    let command := readCommand()
+    if command = .quit { break }
+    process(command)
 }
 
 loop until count >= limit {         // conditional (terminate when true)
@@ -495,11 +507,10 @@ loop item in collection {           // iteration over anything iterable
 
 #### Named loops
 
-> **Deferred — syntax under review, not in the bootstrap.** The `@name` label
-> form below is provisional (it collides visually with `@attribute` macros) and
-> is **not** implemented in the v1 bootstrap compiler. Plain `break`/`continue`
-> (innermost loop only) are in; tagged `break @name` / `continue @name` wait
-> until the labeled-loop syntax is locked.
+> **Deferred.** The `@name` label form below is provisional (it collides
+> visually with `@attribute` macros) and is not part of the bootstrap subset.
+> Plain `break`/`continue` (innermost loop only) are. Tagged `break @name` /
+> `continue @name` require the labeled-loop syntax to be locked (§17).
 
 ```
 loop @search row in grid {
@@ -542,8 +553,8 @@ Sugar:
 - The **error path is always explicit** — `err(.foo)`. Never auto-wrapped.
 
 ```
-fun parseDigit(_ c: char) -> u8? {
-    if c >= '0' & c <= '9' { return c - '0' }       // auto-wraps to some(_)
+fun parseDigit(_ character: char) -> u8? {
+    if character >= '0' & character <= '9' { return character - '0' }       // auto-wraps to some(_)
     return none                                      // polymorphic
 }
 ```
@@ -575,11 +586,11 @@ When a system may return many errors at once, use `T!List<E>`:
 
 ```
 fun validate(_ form: Form) -> Form!List<ValidationError> {
-    let mut errs := List<ValidationError>.new()
-    if !form.email.isValidEmail() { errs.push(.invalidEmail(form.email)) }
-    if form.age < 0 { errs.push(.ageOutOfRange(form.age)) }
-    if errs.isEmpty { return ok(form) }
-    return err(errs)
+    let mut errors := List<ValidationError>.new()
+    if !form.email.isValidEmail() { errors.push(.invalidEmail(form.email)) }
+    if form.age < 0 { errors.push(.ageOutOfRange(form.age)) }
+    if errors.isEmpty { return ok(form) }
+    return err(errors)
 }
 ```
 
@@ -604,8 +615,8 @@ The `Result` type itself stays single-error. Multi-error = "the error type is a 
 | `&&= \|\|= ^^= <<= >>=` | Compound mutation (bitwise) |
 | `:=` | Bind / mutate |
 | `?  ?.  ??` | Option/Result operators |
-| `as` | Numeric cast (semantics TBD) |
-| `0..10`, `0..=10` | Range (full syntax TBD) |
+| `as` | Numeric cast (semantics open, §17) |
+| `0..10`, `0..=10` | Range (full syntax open, §17) |
 
 **Precedence** (high to low) follows **Rust**, mapped onto `x`'s symbols by role:
 
@@ -625,7 +636,7 @@ The `Result` type itself stays single-error. Multi-error = "the error type is a 
 
 This is C's shape with C's two known traps removed (as Rust does): the bitwise band sits **above** comparison — so `x && MASK = 0` is `(x && MASK) = 0`, not the C footgun — and comparisons are a single non-associative level rather than chainable. Boolean `&`/`^`/`\|` (logical, short-circuit) sit at the bottom, below comparison.
 
-**`&` is dual-role** (consistent with C's `&`): binary `a & b` is boolean AND; unary `&value` will be the reference-of operator once the memory model lands. Position disambiguates.
+**`&` is dual-role** (consistent with C's `&`): binary `a & b` is boolean AND; unary `&value` is the reference-of operator (§16.5). Position disambiguates.
 
 - **Operator overloading goes through protocols.** Implement the protocol; the operator becomes available.
 - **No custom operators** — you can only implement the operators above.
@@ -705,7 +716,7 @@ proto Hashable: Equatable {
 
 **Why `compare` returns `Ordering`:** one comparison call covers all four orderings; the compiler derives `<`, `<=`, `>`, `>=` uniformly. More efficient than four separate bool-returning methods.
 
-`Hashable`'s `hashValue() -> u64` signature is the v1 form. May evolve to a streaming `hash(into: Hasher)` once references/mut params from the memory model land.
+`Hashable`'s `hashValue() -> u64` signature is the v1 form. A streaming `hash(into: Hasher)` form is an open item (§17).
 
 ### 11.3 Bundles via refinement
 
@@ -720,7 +731,7 @@ proto Numeric:
 
 proto Bitwise: BitwiseAnd, BitwiseOr, BitwiseXor, BitwiseNot, Shiftable {}
 
-proto Integer: Numeric, Bitwise, Hashable { /* future: bit_count, leading_zeros, ... */ }
+proto Integer: Numeric, Bitwise, Hashable {}
 
 proto FloatingPoint: Numeric {
     fun static nan() -> Self
@@ -764,18 +775,18 @@ proto Iterable<Item> {
 `loop x in iterable { ... }` desugars to:
 
 ```
-let mut __it := iterable.iterator()
+let mut __iterator := iterable.iterator()
 loop {
-    match __it.next() {
+    match __iterator.next() {
         some(x) -> { /* body */ }
         none    -> break
     }
 }
 ```
 
-`Iterator`/`Iterable` are generic protocols in v1 (because associated types are deferred). The surface stays the same when they migrate to associated types post-self-host.
+`Iterator`/`Iterable` are generic protocols in v1 (because associated types are deferred). The surface is designed to stay the same if they migrate to associated types after self-hosting.
 
-### 11.5 Compiler synthesis (updated full list)
+### 11.5 Compiler synthesis
 
 The compiler auto-generates implementations when **all fields conform**:
 
@@ -810,15 +821,15 @@ Other protocols require manual implementation in v1.
 | Form | Meaning |
 |---|---|
 | `[T; N]` | Fixed-size array; `N` is a compile-time integer |
-| `[T]` | Slice — non-owning `{ptr, len}` view |
+| `[T]` | Slice — non-owning `{pointer, length}` view |
 | `List<T>` | Stdlib dynamic growable list |
 
 ```
-let xs: [i32; 3] := [1, 2, 3]
+let numbers: [i32; 3] := [1, 2, 3]
 let zeros: [i32; 100] := [0; 100]       // size 100, all zeros (repeating literal)
-let view: [i32] := xs[..]
-let dyn := List<i32>.new()
-dyn.push(42)
+let view: [i32] := numbers[..]
+let list := List<i32>.new()
+list.push(42)
 ```
 
 Other collections (`HashMap<K, V>`, `Set<T>`, etc.) live in the stdlib.
@@ -827,10 +838,10 @@ Other collections (`HashMap<K, V>`, `Set<T>`, etc.) live in the stdlib.
 
 ## 13. Modules and visibility
 
-- **No `module` keyword.** Modules are defined by **manifest + directory** (format TBD).
+- **No `module` keyword.** Modules are defined by **manifest + directory** (format open, §17).
 - Files within a module share visibility freely.
 - **Default visibility is public** (exported across module boundaries).
-- `private` is the only restriction modifier (scope TBD — file vs module).
+- `private` is the only restriction modifier (scope open, §17 — file vs module).
 - `import name` brings non-private items into scope.
 - Name clashes resolve by qualifying with the module name:
 
@@ -852,7 +863,7 @@ Compile-time directives split by role:
 - **`@name(...)` — attribute macros.** Decorate a declaration (function or type). They don't evaluate to a value; they modify how the declaration is treated.
 - **`#name(...)` — verb macros.** Appear in expression or statement position. Produce a value, emit code, or generate declarations.
 
-All macro arguments must parse as valid `x` expressions/calls/literals — the lexer and parser don't need special cases per macro. Compiler-builtin macros in v1; user-definable macros come post-self-host with the same syntax.
+All macro arguments must parse as valid `x` expressions/calls/literals — the lexer and parser don't need special cases per macro. Compiler-builtin macros in v1; user-definable macros (after self-hosting, §17) use the same syntax.
 
 ### 14.1 Built-in macros
 
@@ -888,7 +899,7 @@ let pi := 3.14159
 
 #format("Hello {name}, age {age}")
 #format("x = {x:?}")                          // ? = debug formatting via Debugable
-#format("hex: {num:08x}")                     // format spec after `:` (Rust grammar)
+#format("hex: {number:08x}")                   // format spec after `:` (Rust grammar)
 #format("pi ≈ {pi:.2}")                       // .2 = two decimals
 #format("sum: {a + b}")                       // expression inside braces
 #format("nested: {user.profile.name}")        // chained access
@@ -901,7 +912,7 @@ Placeholder grammar inside `{...}`:
 
 Escape literal braces with `{{` and `}}`.
 
-String literals (`"..."` and the `\\` multiline form, §2.1) are *not* interpolated — they are exactly the text you wrote (single-line literals after escape decoding; multiline literals verbatim). Interpolation is **always** explicit via `#format`.
+String literals (`"..."` and the `\\` multiline form, §2.2) are *not* interpolated — they are exactly the text you wrote (single-line literals after escape decoding; multiline literals verbatim). Interpolation is **always** explicit via `#format`.
 
 ### 14.3 `#if`
 
@@ -909,7 +920,7 @@ Conditional compilation at declaration scope:
 
 ```
 #if(target.os = .linux) {
-    @extern(.c, link: "c") fun clock_gettime(_ clkid: i32, _ tp: *Timespec) -> i32
+    @extern(.c, link: "c") fun clock_gettime(_ clockId: i32, _ timespec: *Timespec) -> i32
 }
 
 #if(target.arch = .x86_64) {
@@ -924,12 +935,12 @@ Inside function bodies, plain `if` works — the compiler elides dead branches w
 Inline assembly:
 
 ```
-fun syscall1(_ num: i64, _ arg: i64) -> i64 {
+fun syscall1(_ number: i64, _ argument: i64) -> i64 {
     let mut result: i64 := 0
     #asm(
         "syscall",
-        in("rax", num),
-        in("rdi", arg),
+        in("rax", number),
+        in("rdi", argument),
         out("rax", &result),
         clobbers("rcx", "r11")
     )
@@ -939,7 +950,7 @@ fun syscall1(_ num: i64, _ arg: i64) -> i64 {
 
 `in`, `out`, `clobbers` are not real functions — they're tokens the `#asm` macro interprets as operand specifications. Every argument parses as regular `x` syntax (string literals, function-call expressions).
 
-Operand model details (register allocation, dialect, side effects) are TBD.
+Operand model details (register allocation, dialect, side effects) are open (§17).
 
 ---
 
@@ -950,7 +961,7 @@ Unified under the `@extern` macro. Three contexts depending on what it's attache
 ```
 // (1) Foreign function — symbol exists in C, we declare the signature
 @extern(.c)
-fun printf(_ fmt: *u8, ...) -> i32
+fun printf(_ format: *u8, ...) -> i32
 
 @extern(.c, link: "user32", symbol: "MessageBoxA", callconv: .stdcall)
 fun MessageBox(_ hwnd: *void, _ text: *u8, _ caption: *u8, _ kind: u32) -> i32
@@ -967,11 +978,11 @@ type Timespec {
 }
 ```
 
-ABI tags supported in v1: `.c`. Future: `.rust`, `.cpp` (deferred — require ABI knowledge / name mangling).
+ABI tags supported in v1: `.c`. Deferred: `.rust`, `.cpp` (require ABI knowledge / name mangling).
 
 ### 15.1 Variadic args
 
-`...` in extern function signatures: `fun printf(_ fmt: *u8, ...) -> i32`.
+`...` in extern function signatures: `fun printf(_ format: *u8, ...) -> i32`.
 
 ### 15.2 Function pointer types
 
@@ -982,15 +993,15 @@ First-class type: `fun(T...) -> R`. Usable directly as a value type for callback
 `x`'s `string` is UTF-8 + length, NOT NUL-terminated. Convert at FFI boundary:
 - `string.cstr()` → `*u8` (NUL-terminated, lifetime tied to source).
 - `cstr.toString()` decodes a `*u8` into `string`.
-- A `c"..."` literal (§2.1) is a NUL-terminated byte sequence built at compile time — pass it directly where C wants a `*u8`, no runtime conversion.
+- A `c"..."` literal (§2.2) is a NUL-terminated byte sequence built at compile time — pass it directly where C wants a `*u8`, no runtime conversion.
 
 ### 15.4 C preprocessor macros
 
 NOT interoperable. Wrap on the C side with a real function and bind to that.
 
-### 15.5 Future: header-binding macro
+### 15.5 Deferred: header-binding macro
 
-Once user-definable macros land, a `@bindings(header: "stdio.h", link: "c")` macro can auto-generate `@extern` declarations from a C header at compile time — same model as Zig's `@cImport`. The language stays small; ergonomics grow through macros.
+With user-definable macros, a `@bindings(header: "stdio.h", link: "c")` macro can auto-generate `@extern` declarations from a C header at compile time — same model as Zig's `@cImport`. The language stays small; ergonomics grow through macros.
 
 ---
 
@@ -1056,12 +1067,12 @@ When an owner of a droppable value goes out of scope, `drop()` runs automaticall
 
 ```
 type FileHandle: Droppable {
-    private fd: i32
+    private fileDescriptor: i32
 
     fun static open(_ path: string) -> FileHandle!IoError { /* ... */ }
 
     fun mut drop() {
-        unsafe { libc.close(fd) }
+        unsafe { libc.close(fileDescriptor) }
     }
 }
 
@@ -1080,9 +1091,9 @@ fun length(_ s: &string) -> usize {
     return s.byteCount                   // auto-deref on field access and method call
 }
 
-fun mut translate(_ p: &mut Point, by v: Vector) {
-    p.x := p.x + v.x
-    p.y := p.y + v.y
+fun mut translate(_ point: &mut Point, by vector: Vector) {
+    point.x := point.x + vector.x
+    point.y := point.y + vector.y
 }
 
 let s := string.new("hello")
@@ -1101,10 +1112,10 @@ A reference can outlive its referent (use-after-free), and the compiler will not
 
 Mitigations available in v1:
 - RAII makes most lifetimes deterministic and visible (drop happens at end of scope).
-- Debug-mode runtime sanitizers (planned).
+- Debug-mode runtime sanitizers (deferred).
 - Idiomatic patterns — for graph-shaped data, prefer arena + indices (§16.12).
 
-Planned v2 evolution: opt-in lifetime checking that catches use-after-free *without* imposing Rust-style aliasing rules. See §16.13 and §17.
+v2 evolution: opt-in lifetime checking that catches use-after-free *without* imposing Rust-style aliasing rules. See §16.13 and §17.
 
 ### 16.6 Raw pointers — `*T` and `*mut T`
 
@@ -1120,7 +1131,7 @@ All raw-pointer operations require an `unsafe` block (§16.10).
 
 ```
 @extern(.c) fun malloc(_ size: usize) -> *void
-@extern(.c) fun free(_ ptr: *void)
+@extern(.c) fun free(_ pointer: *void)
 
 unsafe {
     let p := malloc(1024) as *mut u8
@@ -1136,8 +1147,8 @@ unsafe {
 ```
 proto Allocator {
     fun mut alloc(_ size: usize, align: usize) -> *void?
-    fun mut free(_ ptr: *void, size: usize, align: usize)
-    fun mut realloc(_ ptr: *void, oldSize: usize, newSize: usize, align: usize) -> *void?
+    fun mut free(_ pointer: *void, size: usize, align: usize)
+    fun mut realloc(_ pointer: *void, oldSize: usize, newSize: usize, align: usize) -> *void?
 }
 ```
 
@@ -1176,8 +1187,8 @@ Closures capture surrounding bindings based on the binding's type and mutability
 let count := 5
 let f := { x in x + count }              // count is i32 (Copyable) → captured by copy
 
-let mut acc := 0
-let g := { x in acc := acc + x }         // captured by &mut acc
+let mut total := 0
+let g := { x in total := total + x }     // captured by &mut total
 
 let owned := loadConfig()
 let h := move { x in process(owned, x) } // `move` transfers ownership into the closure
@@ -1190,7 +1201,7 @@ Rules:
 - **Non-`Copyable` mutable bindings** → captured by `&mut T`.
 - **`move { params in body }`** — prefix keyword that forces capture-by-value (ownership transfer) for non-Copyable captures.
 
-Same v1 caveat as references: a closure that escapes the lifetime of its captures and is later invoked is undefined behavior. The compiler does not statically prevent this. The capture-rule specifics (e.g., escape detection, partial captures, capture lists Swift-style) are flagged in §17 for revision before implementation.
+Same v1 caveat as references: a closure that escapes the lifetime of its captures and is later invoked is undefined behavior. The compiler does not statically prevent this. The capture-rule specifics (e.g., escape detection, partial captures, capture lists Swift-style) are open items (§17).
 
 `move` is a contextual keyword that appears only immediately before a closure brace.
 
@@ -1242,13 +1253,13 @@ let n := b.value                         // auto-deref
 // b.drop() at end of scope; the heap allocation is freed.
 ```
 
-Other owning containers shipping in the stdlib (long-term, not all v1):
+Other owning containers in the stdlib (not all v1):
 
 - **`Rc<T>`** — reference-counted shared ownership (single-threaded).
 - **`Arc<T>`** — atomic refcount, thread-safe shared ownership.
 - **`Cell<T>` / `RefCell<T>`** — interior mutability behind an immutable reference, when needed.
 
-v1 ships `Box<T>` and the core collections (`List<T>`, `string`, `HashMap<K, V>`, `Set<T>`). The rest follow as the stdlib evolves.
+v1 ships `Box<T>` and the core collections (`List<T>`, `string`, `HashMap<K, V>`, `Set<T>`).
 
 ### 16.12 Working with trees and graphs
 
@@ -1300,36 +1311,35 @@ type Tree {
 ```
 All nodes live in one flat list; cross-references are integer indices. No dangling possible; cache-friendly. The pattern compilers use internally for ASTs and symbol tables.
 
-### 16.13 Future evolution path
+### 16.13 Evolution path
 
 All additive — none breaks v1 code:
 
 - **v2: opt-in lifetime checking** — non-mandatory analysis that catches dangling references at compile time *without* Rust's aliasing restrictions. Catches use-after-free; trees with parent refs still compile.
 - **v3+: full borrow checker** — only if v2 proves insufficient.
-- **Data-race protection** — `Send`/`Sync`-style analog for concurrency; long-term.
-- **`Hashable` upgrade** — `hashValue() -> u64` may evolve to streaming `hash(into: Hasher)` once references and `mut` parameters are well-exercised.
+- **Data-race protection** — `Send`/`Sync`-style analog for concurrency (deferred).
+- **`Hashable` upgrade** — `hashValue() -> u64` may evolve to streaming `hash(into: Hasher)`.
 
 ---
 
 ## 17. Open / deferred decisions
 
-These are explicitly unsettled and will be locked in future rounds.
+These are explicitly unsettled.
 
 | Topic | Status |
 |---|---|
-| **Memory model** | Direction settled (ownership + RAII + unchecked refs + explicit allocators + `unsafe`); awaiting lock-in section in `LANGUAGE.md` |
 | **Closure capture semantics** | Reference vs value capture, mutability propagation, explicit-capture form |
-| **Associated-type ergonomics** | **Locked in spirit** (protocols carry `<T>` slots, no `T.Item` accessor, bind explicitly at use). **Needs revision before implementation** — use-site syntax (`<I: Iterator<T>, T>`), constraint shorthand, slot defaults, and behavior in multi-bound contexts all need another pass. |
+| **Associated-type ergonomics** | **Locked in spirit** (protocols carry `<T>` slots, no `T.Item` accessor, bind explicitly at use). **Needs revision** — use-site syntax (`<I: Iterator<T>, T>`), constraint shorthand, slot defaults, and behavior in multi-bound contexts all need another pass. |
 | **Numeric cast `as`** | Widening/narrowing/checked semantics, overflow behavior |
-| **Async / concurrency** | Long-term |
+| **Async / concurrency** | Deferred |
 | **Module manifest** | Format, directory layout, dependency declaration |
 | **Visibility scope** | `private` = file or module; type-level field visibility |
 | **Range syntax** | `..`, `..=`, step? |
 | **`Hashable` signature** | May evolve from `hashValue() -> u64` to streaming `hash(into: Hasher)` |
-| **User-definable macros** | Post-self-host |
-| **Regex literal** | Post-self-host (`/pat/flags`) |
-| **`@extern(.rust)` / `.cpp`** | Future ABIs |
+| **User-definable macros** | After self-hosting |
+| **Regex literal** | After self-hosting (`/pattern/flags`) |
+| **`@extern(.rust)` / `.cpp`** | Deferred |
 | **Inline asm mechanics** | Operand binding model, dialects |
 | **C `int`/`long`/`size_t`** | Stdlib aliases module |
 | **Stdlib design** | Whole subject, post-language-design |
-| **`@bindings` header macro** | Future macro (referenced in §15.5) — needs `@` → `#` re-classification when user macros land |
+| **`@bindings` header macro** | Deferred (§15.5); needs `@` → `#` re-classification alongside user-definable macros |
