@@ -1,21 +1,5 @@
-//! Token definitions for the `x` lexer.
-//!
-//! A [`Token`] pairs a [`TokenKind`] with the source [`Span`] it covers.
-//! Keywords each get their own `TokenKind` variant (rather than being folded
-//! into `Identifier`) so the parser can match on them directly.
-//!
-//! The stream is always terminated by a single [`TokenKind::Eof`] with a
-//! zero-length span at end of input, so the parser's `peek` can return a real
-//! `Token` rather than an `Option` and produce spanned "unexpected end of
-//! file" diagnostics for free.
-
 use std::fmt;
 
-/// A byte range in the source, plus the 1-based line/column of its start.
-///
-/// `start`/`end` are byte offsets into the original UTF-8 source (`end`
-/// exclusive). `line`/`column` describe the first character and exist purely
-/// for diagnostics — `column` counts Unicode scalar values, not bytes.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
@@ -26,13 +10,21 @@ pub struct Span {
 
 impl Span {
     pub fn new(start: usize, end: usize, line: u32, column: u32) -> Self {
-        Span { start, end, line, column }
+        Span {
+            start,
+            end,
+            line,
+            column,
+        }
     }
 
-    /// A span covering from the start of `self` to the end of `end`. Used to
-    /// give a composite AST node the full extent of its children.
     pub fn to(self, end: Span) -> Span {
-        Span { start: self.start, end: end.end, line: self.line, column: self.column }
+        Span {
+            start: self.start,
+            end: end.end,
+            line: self.line,
+            column: self.column,
+        }
     }
 }
 
@@ -42,7 +34,6 @@ impl fmt::Debug for Span {
     }
 }
 
-/// The base a numeric integer literal was written in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Radix {
     Decimal,
@@ -52,7 +43,6 @@ pub enum Radix {
 }
 
 impl Radix {
-    /// The numeric base (e.g. 16 for hexadecimal).
     pub fn base(self) -> u32 {
         match self {
             Radix::Decimal => 10,
@@ -63,34 +53,18 @@ impl Radix {
     }
 }
 
-/// The lexical category of a token.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
-    // ---- Literals -------------------------------------------------------
-    /// Integer literal. Value is parsed with underscores stripped; `radix`
-    /// records how it was written (for round-tripping / diagnostics).
     Integer { value: u128, radix: Radix },
-    /// Floating-point literal, stored as the cleaned source text (underscores
-    /// removed). Kept as text to avoid an early lossy `f64` round-trip.
     Float(String),
-    /// String literal with escapes already decoded.
     String(String),
-    /// Byte string literal `b"..."` — decoded bytes (ASCII source plus byte
-    /// escapes; no Unicode escapes).
     ByteString(Vec<u8>),
-    /// C string literal `c"..."` — decoded UTF-8 bytes. The terminating NUL is
-    /// implicit (not stored), and no interior NUL is permitted.
     CString(Vec<u8>),
-    /// Character literal with its escape already decoded.
     Character(char),
 
-    // ---- Identifiers & comments ----------------------------------------
-    /// An identifier (also covers a lone `_`).
     Identifier(String),
-    /// A `///` documentation comment, body trimmed of the leading marker/space.
     DocumentationComment(String),
 
-    // ---- Keywords -------------------------------------------------------
     Let,
     Mut,
     Fun,
@@ -109,89 +83,83 @@ pub enum TokenKind {
     Continue,
     Return,
     As,
-    SelfValue, // `self`
-    SelfType,  // `Self`
+    SelfValue,
+    SelfType,
     True,
     False,
     Private,
     Unsafe,
     Move,
 
-    // ---- Operators & punctuation ---------------------------------------
-    Plus,         // +
-    Minus,        // -
-    Star,         // *
-    Slash,        // /
-    Percent,      // %
-    PlusEqual,    // +=
-    MinusEqual,   // -=
-    StarEqual,    // *=
-    SlashEqual,   // /=
-    PercentEqual, // %=
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    PlusEqual,
+    MinusEqual,
+    StarEqual,
+    SlashEqual,
+    PercentEqual,
 
-    Equal,        // =   (equality; binding/mutation is `:=`)
-    NotEqual,     // !=
-    Less,         // <
-    LessEqual,    // <=
-    Greater,      // >
-    GreaterEqual, // >=
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
 
-    Ampersand,           // &   boolean AND / reference-of
-    Pipe,                // |   boolean OR
-    Bang,                // !   boolean NOT
-    Caret,               // ^   boolean XOR
-    AmpersandAmpersand,  // &&  bitwise AND
-    PipePipe,            // ||  bitwise OR
-    BangBang,            // !!  bitwise NOT
-    CaretCaret,          // ^^  bitwise XOR
-    ShiftLeft,           // <<
-    ShiftRight,          // >>
+    Ampersand,
+    Pipe,
+    Bang,
+    Caret,
+    AmpersandAmpersand,
+    PipePipe,
+    BangBang,
+    CaretCaret,
+    ShiftLeft,
+    ShiftRight,
 
-    AmpersandEqual,           // &=
-    PipeEqual,                // |=
-    CaretEqual,               // ^=
-    AmpersandAmpersandEqual,  // &&=
-    PipePipeEqual,            // ||=
-    CaretCaretEqual,          // ^^=
-    ShiftLeftEqual,           // <<=
-    ShiftRightEqual,          // >>=
+    AmpersandEqual,
+    PipeEqual,
+    CaretEqual,
+    AmpersandAmpersandEqual,
+    PipePipeEqual,
+    CaretCaretEqual,
+    ShiftLeftEqual,
+    ShiftRightEqual,
 
-    ColonEqual, // :=
+    ColonEqual,
 
-    Question,         // ?
-    QuestionDot,      // ?.
-    QuestionQuestion, // ??
+    Question,
+    QuestionDot,
+    QuestionQuestion,
 
-    Arrow, // ->
+    Arrow,
 
-    DotDot,      // ..
-    DotDotEqual, // ..=
-    Ellipsis,    // ...
+    DotDot,
+    DotDotEqual,
+    Ellipsis,
 
-    Dot,       // .
-    Comma,     // ,
-    Colon,     // :
-    Semicolon, // ;   (only meaningful as the array-size separator in `[T; N]`)
-    At,        // @
-    Hash,      // #
+    Dot,
+    Comma,
+    Colon,
+    Semicolon,
+    At,
+    Hash,
 
-    LeftParenthesis,  // (
-    RightParenthesis, // )
-    LeftBrace,        // {
-    RightBrace,       // }
-    LeftBracket,      // [
-    RightBracket,     // ]
+    LeftParenthesis,
+    RightParenthesis,
+    LeftBrace,
+    RightBrace,
+    LeftBracket,
+    RightBracket,
 
-    // ---- Trivia / structure --------------------------------------------
-    /// A statement-terminating newline. Consecutive blank lines coalesce into
-    /// a single `Newline`; leading newlines are not emitted.
     Newline,
-    /// End of input. Always the final token, with a zero-length span.
     Eof,
 }
 
 impl TokenKind {
-    /// Maps an identifier string to its keyword `TokenKind`, if it is one.
     pub fn keyword_from(identifier: &str) -> Option<TokenKind> {
         use TokenKind::*;
         Some(match identifier {
@@ -224,7 +192,6 @@ impl TokenKind {
         })
     }
 
-    /// A short human-readable name for diagnostics and token dumps.
     pub fn describe(&self) -> &'static str {
         use TokenKind::*;
         match self {
@@ -321,7 +288,6 @@ impl TokenKind {
     }
 }
 
-/// A lexed token: its kind plus the source span it covers.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,

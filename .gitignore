@@ -3,14 +3,5 @@
 .env
 .env.*
 !.env.example
-mise.local.toml
-
 /target
-*.o
-*.a
-*.dylib
-*.so
-*.exe
-*.dll
-main
-
+mise.local.toml

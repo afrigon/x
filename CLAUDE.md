@@ -1,81 +1,82 @@
-# `x` — Project Overview
+# `x`
 
-`x` is a strongly-typed, performant, elegant systems programming language being built from scratch. Inspired by Rust, Swift, and Zig. Designed for OS dev, native apps, games, and embeddable runtimes. Self-hosting is the early goal.
+`x` is a strongly-typed, performant, elegant systems programming language inspired by Rust, Swift, and Zig. It targets operating systems and kernels, native applications on Linux, Windows, and macOS, games with full C interop, and embeddable runtimes. Design priorities, in order: performance, elegance, speed to self-host. The compiler is self-hosting: a bootstrap written in Rust exists only to compile the compiler written in `x`.
 
-## Project Structure
+## Repository layout
 
-- x: the self-hosted implementation of the compiler
-- x-rust: The bootstrap rust implementation of the compiler
-- x-lang: The promotional website for x
-
-## Status
-
-**Pre-implementation.** The language is being designed conversationally. No compiler code exists yet. The next implementation milestone is Phase 0 of `PLAN.md` (project scaffold + emit-`.ll`-via-`llc` pipeline), to be started once the language design is fully locked.
+- This repository holds the compiler. The Rust bootstrap lives on `main` until the `x` compiler can compile itself. The `x` implementation is developed on branches and takes over `main` at cutover, at which point the Rust bootstrap is archived under a git tag.
+- `x-lang` is a separate repository holding the documentation website.
 
 ## Where to find things
 
-- **`LANGUAGE.md`** — Authoritative language design spec. Syntax, type system, semantics, and every currently-locked surface decision. Always check here first when answering "what does `x` look like?"
-- **`PLAN.md`** — Engineering roadmap. Phased milestones (Phase 0 setup → Phase 1 hello world → Phase 2 compiler-complete subset → Phase 3 self-host → Phase 4 ecosystem), compiler architecture, locked bootstrap/LLVM decisions. **Note:** the `Phase 1`–`Phase 2` syntax sketches in this doc predate the surface-design rounds and use placeholder syntax (`fn`, `Option<T>` etc.) — they'll be rewritten with locked `x` syntax once language design is complete.
-- **`CLAUDE.md`** — This file. Project nav + working conventions.
+- `LANGUAGE.md` — the authoritative language design: syntax, type system, semantics, naming conventions, and the Open decisions table. Every question about what `x` looks like is answered here and nowhere else.
+- The GitHub project [x-roadmap](https://github.com/users/afrigon/projects/6) holds the roadmap: milestones with their exit criteria, issues with acceptance criteria, and the project README with vision and risks.
+- `README.md` — install and development commands.
 
 ## Working conventions
 
-- Design happens via conversation. **Locks are written to `LANGUAGE.md`** once agreed; open questions are explicitly tabulated in `LANGUAGE.md`.
-- The engineering plan (`PLAN.md`) will be revised to reflect locked syntax after the language design round completes.
-- When proposing changes, reference the section number in `LANGUAGE.md` so updates land in one place.
+- Language design happens in conversation. Agreed decisions are written to `LANGUAGE.md`; unresolved ones are tabulated in its Open decisions section.
+- Name the `LANGUAGE.md` section when proposing a language change, so the update lands in one place.
+- The implementation follows `LANGUAGE.md` exactly. Where the specification is silent, the gap is recorded in Open decisions rather than decided in code.
+- Roadmap work is tracked as GitHub issues. An issue's acceptance criteria name the `LANGUAGE.md` sections it implements.
+
+## Engineering decisions
+
+| Decision | Choice | Why |
+|---|---|---|
+| **Bootstrap language** | Rust | Closest paradigm to `x`, so the self-hosting port is mechanical. Memory safety, ADTs, and pattern matching keep compiler code clean. |
+| **Code generation** | Emit textual LLVM IR (`.ll`), shell out to `llc` and `clang` | Fastest path to native binaries with zero LLVM linking. The `llvm-c` API (via `llvm-sys` / `inkwell`) is adopted only when a JIT or finer control requires it. |
+| **LLVM toolchain** | Installed through mise (`clang` and `conda:llvm-tools`), pinned in `mise.toml` | Same toolchain on every machine, locked in `mise.lock`. `llc` runs with `-relocation-model=pic` so its objects link into position-independent executables. |
+| **C++ interop** | Out of scope | C interop is a pillar. C++-only LLVM features are reached through thin `extern "C"` shims. |
+| **Architecture** | One frontend → shared typed IR → pluggable backends | LLVM AOT is the only backend until self-hosting; JIT and bytecode VM come after, written in `x`. |
+| **Scope strategy** | Minimal compiler-complete subset first | Just enough language to write a compiler; grow features in `x` after self-hosting. If the bootstrap compiler can be written without a feature, the feature waits. |
+| **Dependencies** | LLVM only, for `x` itself | The bootstrap may use Cargo crates freely. Everything else is re-implemented in `x`. |
+| **Self-hosting strategy** | Stage-by-stage rewrite with cross-validation | Each stage is rewritten in `x` and validated against the Rust version before the next; both coexist during the transition. |
+
+## Compiler architecture
+
+```
+                 source.x
+                    │
+                    ▼
+                 ┌──────┐
+                 │ Lex  │
+                 └──┬───┘
+                    ▼
+                 ┌──────┐
+                 │ Parse│
+                 └──┬───┘
+                    ▼
+                 ┌──────┐
+                 │ AST  │
+                 └──┬───┘
+                    ▼
+              ┌───────────┐
+              │ Typecheck │
+              └─────┬─────┘
+                    ▼
+                ┌───────┐
+                │ x-IR  │ ◄── single, shared, typed IR
+                └───┬───┘
+                    │
+        ┌───────────┼───────────┐
+        ▼           ▼           ▼
+   ┌─────────┐ ┌────────┐ ┌──────────┐
+   │LLVM AOT │ │  JIT   │ │bytecodeVM│
+   │(native) │ │ (LLVM) │ │(embedded)│
+   └─────────┘ └────────┘ └──────────┘
+   ─ bootstrap ─ ── after self-host ──
+```
+
+A single frontend produces a typed IR; backends are pluggable. Only LLVM AOT exists in the bootstrap. JIT and bytecode VM are written in `x` after self-hosting.
+
+## Self-hosting
+
+- Each compiler stage is rewritten in `x` in pipeline order: lexer, parser, typechecker, IR, codegen, driver. The Rust and `x` versions coexist, and cross-validation tests compare their token streams, ASTs, IR, and `.ll` output.
+- Cutover: the Rust bootstrap compiles the `x` compiler (stage 1); stage 1 compiles itself (stage 2); stage 2 compiles itself (stage 3). Stage 2 and stage 3 outputs must match byte for byte.
+- After cutover the `x` compiler takes over `main` and the Rust bootstrap is archived under a git tag.
 
 ## Code style
 
-- **Always prefer full, descriptive names over abbreviations** — in code and in AST/type names alike: `Expression` not `Expr`, `formatter` not `f`, `character` not `c`, `declaration` not `decl`. Applies to types, fields, functions, and locals.
-- **Exception: loop / tight-iteration variables**, where short names are fine (`i`, `for c in chars`, `loop x in items`).
-
-## Naming conventions
-
-- **Protocol names prefer the `-able` suffix when the protocol expresses a capability** ("a type that can be X-ed"): `Equatable`, `Hashable`, `Comparable`, `Displayable`, `Debugable`, `Addable`, `Subtractable`, `Multipliable`, `Divisible`, `Modable`, `Negatable`, `Shiftable`, `Indexable`, `Iterable`, `Droppable`, `Copyable`.
-- **Drop the `-able` when it reads awkwardly or the name is a noun**:
-  - Actor / role nouns: `Iterator`, `Allocator`, `Hasher`.
-  - Bundle / category protocols: `Numeric`, `Integer`, `FloatingPoint`, `Bitwise`.
-  - Bitwise operation protocols where `-able` would be ugly: `BitwiseAnd`, `BitwiseOr`, `BitwiseXor`, `BitwiseNot`.
-  - Markers / specific abilities where the noun reads cleaner: `Default`.
-- **Method names pair with the protocol** when natural: `Displayable.display()`, `Debugable.debug()`, `Droppable.drop()`, `Iterable.iterator()`, `Iterator.next()`, `Addable.add()`, `Negatable.negate()`, `Hashable.hashValue()`. Avoid `toX`-style method names except where they're universally recognized idioms (e.g., `toString` on a string-conversion helper).
-- Marker protocols (no methods) use the capability noun directly: `Copyable {}`.
-
-## Locked at a glance (full detail in `LANGUAGE.md`)
-
-| Area | Choice |
-|---|---|
-| Bootstrap compiler | Rust |
-| LLVM access | C API (`llvm-c`) |
-| First backend | LLVM AOT, native binaries |
-| Self-host strategy | Minimal compiler-complete subset first |
-| Function keyword | `fun` (with postfix `mut` / `static` modifiers) |
-| Type keyword | `type` (unified for records and enums — body shape decides) |
-| Protocol keyword | `proto` |
-| Binding | `let` / `let mut`; `:=` for bind/mutate; `=` for equality |
-| Argument labels | Full Swift external/internal names |
-| Optional / Result | `T?` / `T!E`; sugar over `Option`/`Result`; `?` `?.` `??` operators |
-| Pattern matching | `match` with guards; `if` and `match` are expressions |
-| Loops | One keyword: `loop`, `loop until`, `loop x in iter`; `@name` for named loops |
-| Polymorphism | Generics `<T: P + Q>` + opaque types `some P`. No existentials in v1. |
-| Macros / comptime | Hybrid `@`/`#` split — `@name(...)` attribute macros on declarations (`@extern`, `@inline`, `@unsafe`, `@test`, `@deprecated`); `#name(...)` verb macros in expression/statement position (`#if`, `#match`, `#format`, `#asm`, `#panic`, `#assert`) |
-| FFI | Unified under `@extern(.c, link: ..., symbol: ..., callconv: ...)` |
-| Comments | `//` line, `///` doc; no `/* */` |
-| Other | No type aliases, no inheritance, no extensions (v1), no custom operators, no `++`/`--`, no force-unwrap, no ternary |
-
-## What's open (key items)
-
-- Module manifest format and `private` scope details
-- Numeric cast (`as`) semantics
-- Async / concurrency
-- Stdlib organization (broadly)
-- **Associated-type ergonomics** — locked in spirit (protocol `<T>` slots, no `T.Item` accessor); use-site syntax needs revision before implementation
-- Closure capture specifics (escape detection, partial captures, capture-list shape)
-
-Full list in `LANGUAGE.md` §17.
-
-## How to read the docs in order
-
-1. Skim `LANGUAGE.md` §1 (overview + sample) for the visual feel.
-2. Then `LANGUAGE.md` §2–§16 for any specific area you need (memory model is §16).
-3. `PLAN.md` for engineering roadmap and Phase boundaries.
-4. `LANGUAGE.md` §17 for what's still open.
+- Full, descriptive names in code and in AST and type names alike: `Expression` not `Expr`, `declaration` not `decl`, `character` not `c`. Loop and tight-iteration variables may be short (`i`, `loop c in chars`). `src` and `dst` are accepted abbreviations.
+- Code samples in `LANGUAGE.md` follow the same naming rules as compiler code.

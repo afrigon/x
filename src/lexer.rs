@@ -1,25 +1,8 @@
-//! Hand-written lexer for `x`.
-//!
-//! Turns UTF-8 source into a flat [`Token`] stream with source spans. The
-//! lexer is error-recovering: it never aborts on a bad character, it records a
-//! [`LexError`] and keeps going, so a single file can surface many errors at
-//! once. [`tokenize`] returns both the tokens it managed to produce and every
-//! error it hit.
-//!
-//! Notable behaviours:
-//! - Newlines are significant (they terminate statements). Consecutive blank
-//!   lines coalesce into a single [`TokenKind::Newline`], and leading newlines
-//!   are dropped.
-//! - `//` line comments are skipped; `///` doc comments are kept as tokens.
-//! - String/character escapes follow a provisional grammar (the spec leaves
-//!   the exact rules open) covering `\n \r \t \0 \\ \" \'`, `\xHH`, `\u{...}`.
-
 use crate::token::{Radix, Span, Token, TokenKind};
 use std::fmt;
 use std::iter::Peekable;
 use std::str::Chars;
 
-/// What went wrong at a particular [`Span`] during lexing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LexError {
     pub kind: LexErrorKind,
@@ -28,34 +11,18 @@ pub struct LexError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LexErrorKind {
-    /// A character that cannot begin any token.
     UnexpectedCharacter(char),
-    /// A string literal with no closing quote before end of line/input.
     UnterminatedString,
-    /// A character literal with no closing quote.
     UnterminatedCharacter,
-    /// An empty character literal `''`.
     EmptyCharacter,
-    /// A character literal containing more than one character.
     MultipleCharacters,
-    /// A backslash escape that isn't recognised.
     InvalidEscape(char),
-    /// A `\xHH` escape above 0x7F in a context that only allows ASCII
-    /// (`"..."` / `'...'`); use `\u{...}`, or a byte/C string for raw bytes.
     AsciiEscapeOutOfRange,
-    /// A `\u{...}` escape in a byte string, where it is not allowed.
     UnicodeEscapeNotAllowed,
-    /// A non-ASCII character in a byte string literal (only ASCII is allowed;
-    /// use `\xHH` for raw bytes).
     NonAsciiByteString,
-    /// A NUL (`\0`, `\x00`, `\u{0}`, or a raw NUL) inside a C string, which is
-    /// implicitly NUL-terminated and may not contain an interior NUL.
     NulInCString,
-    /// A malformed `\u{...}` escape.
     InvalidUnicodeEscape,
-    /// An integer literal that doesn't fit in the lexer's `u128` accumulator.
     IntegerOverflow,
-    /// A numeric literal missing required digits (e.g. `0x`, `1e`).
     MissingDigits,
 }
 
@@ -89,8 +56,6 @@ impl fmt::Display for LexError {
     }
 }
 
-/// A saved cursor position, used to span a token from where it started to the
-/// current position once fully consumed.
 #[derive(Clone, Copy)]
 struct Mark {
     byte: usize,
@@ -98,42 +63,33 @@ struct Mark {
     column: u32,
 }
 
-/// Which quoted string flavor a `b`/`c` prefix introduces.
 #[derive(Clone, Copy)]
 enum StringFlavor {
-    Byte, // b"..."
-    C,    // c"..."
+    Byte,
+    C,
 }
 
-/// Per-flavor escape and content rules, modelled on the Rust reference.
 #[derive(Clone, Copy)]
 struct EscapeRules {
-    /// `\u{...}` is permitted (string / char / C string; not byte string).
     unicode_escape: bool,
-    /// `\xHH` may reach 0x00–0xFF (byte / C string) rather than ASCII 0x00–0x7F.
     byte_hex: bool,
-    /// A NUL (`\0`, `\x00`, `\u{0}`, raw) is permitted (forbidden in C strings).
     allow_nul: bool,
-    /// Unescaped source characters must be ASCII (byte strings only).
     ascii_only_raw: bool,
 }
 
 impl EscapeRules {
-    /// `"..."` and `'...'`: Unicode escapes, ASCII-only `\x`, NUL allowed.
     const STRING: EscapeRules = EscapeRules {
         unicode_escape: true,
         byte_hex: false,
         allow_nul: true,
         ascii_only_raw: false,
     };
-    /// `b"..."`: no Unicode escapes, full-range `\x`, ASCII-only raw content.
     const BYTE_STRING: EscapeRules = EscapeRules {
         unicode_escape: false,
         byte_hex: true,
         allow_nul: true,
         ascii_only_raw: true,
     };
-    /// `c"..."`: Unicode escapes, full-range `\x`, no NUL of any form.
     const C_STRING: EscapeRules = EscapeRules {
         unicode_escape: true,
         byte_hex: true,
@@ -142,16 +98,13 @@ impl EscapeRules {
     };
 }
 
-/// Convenience: lex `source` into tokens and errors.
 pub fn tokenize(source: &str) -> (Vec<Token>, Vec<LexError>) {
     Lexer::new(source).run()
 }
 
 pub struct Lexer<'source> {
     source: &'source str,
-    /// `(byte offset, character)` for every scalar in the source.
     characters: Vec<(usize, char)>,
-    /// Index into `characters` of the next character to read.
     index: usize,
     line: u32,
     column: u32,
@@ -188,19 +141,14 @@ impl<'source> Lexer<'source> {
         (self.tokens, self.errors)
     }
 
-    // ---- Cursor primitives ---------------------------------------------
-
-    /// The next character, without consuming it.
     fn current(&self) -> Option<char> {
         self.characters.get(self.index).map(|&(_, c)| c)
     }
 
-    /// Look `offset` characters ahead without consuming.
     fn peek(&self, offset: usize) -> Option<char> {
         self.characters.get(self.index + offset).map(|&(_, c)| c)
     }
 
-    /// Byte offset of the next character (or end of source if exhausted).
     fn current_byte(&self) -> usize {
         self.characters
             .get(self.index)
@@ -208,7 +156,6 @@ impl<'source> Lexer<'source> {
             .unwrap_or(self.source.len())
     }
 
-    /// Consume and return the next character, updating line/column.
     fn advance(&mut self) -> Option<char> {
         let &(_, c) = self.characters.get(self.index)?;
         self.index += 1;
@@ -221,7 +168,6 @@ impl<'source> Lexer<'source> {
         Some(c)
     }
 
-    /// If the next character is `expected`, consume it and return true.
     fn match_char(&mut self, expected: char) -> bool {
         if self.current() == Some(expected) {
             self.advance();
@@ -231,7 +177,6 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Consume characters while `predicate` holds.
     fn consume_while(&mut self, predicate: impl Fn(char) -> bool) {
         while let Some(c) = self.current() {
             if predicate(c) {
@@ -264,19 +209,16 @@ impl<'source> Lexer<'source> {
         self.errors.push(LexError { kind, span });
     }
 
-    // ---- Trivia --------------------------------------------------------
-
     fn lex_newline(&mut self) {
         let start = self.mark();
-        // Treat `\r`, `\n`, and `\r\n` as a single line break.
         if self.current() == Some('\r') {
             self.advance();
         }
         if self.current() == Some('\n') {
             self.advance();
         }
-        // Coalesce: only emit if there's a non-newline token to terminate.
-        let should_emit = matches!(self.tokens.last(), Some(token) if token.kind != TokenKind::Newline);
+        let should_emit =
+            matches!(self.tokens.last(), Some(token) if token.kind != TokenKind::Newline);
         if should_emit {
             self.emit(TokenKind::Newline, start);
         }
@@ -284,12 +226,12 @@ impl<'source> Lexer<'source> {
 
     fn lex_comment(&mut self) {
         let start = self.mark();
-        self.advance(); // first '/'
-        self.advance(); // second '/'
+        self.advance();
+        self.advance();
         // Exactly three slashes (and not more) marks a doc comment.
         let is_doc = self.current() == Some('/') && self.peek(1) != Some('/');
         if is_doc {
-            self.advance(); // third '/'
+            self.advance();
             let body_start = self.current_byte();
             self.consume_while(|c| c != '\n' && c != '\r');
             let body = &self.source[body_start..self.current_byte()];
@@ -300,8 +242,6 @@ impl<'source> Lexer<'source> {
             self.consume_while(|c| c != '\n' && c != '\r');
         }
     }
-
-    // ---- Significant tokens --------------------------------------------
 
     fn lex_significant(&mut self, c: char) {
         if c == '"' {
@@ -335,7 +275,6 @@ impl<'source> Lexer<'source> {
     fn lex_number(&mut self) {
         let start = self.mark();
 
-        // Radix-prefixed integers: 0x.., 0o.., 0b..
         if self.current() == Some('0') {
             if let Some(radix) = match self.peek(1) {
                 Some('x' | 'X') => Some(Radix::Hexadecimal),
@@ -343,8 +282,8 @@ impl<'source> Lexer<'source> {
                 Some('b' | 'B') => Some(Radix::Binary),
                 _ => None,
             } {
-                self.advance(); // 0
-                self.advance(); // prefix letter
+                self.advance();
+                self.advance();
                 let digits_start = self.current_byte();
                 self.consume_while(|c| is_radix_digit(c, radix) || c == '_');
                 let digits = self.source[digits_start..self.current_byte()].to_string();
@@ -353,7 +292,6 @@ impl<'source> Lexer<'source> {
             }
         }
 
-        // Decimal integer part.
         self.consume_while(|c| c.is_ascii_digit() || c == '_');
 
         let mut is_float = false;
@@ -362,14 +300,13 @@ impl<'source> Lexer<'source> {
         // stays an integer followed by `.`.
         if self.current() == Some('.') && self.peek(1).is_some_and(|c| c.is_ascii_digit()) {
             is_float = true;
-            self.advance(); // '.'
+            self.advance();
             self.consume_while(|c| c.is_ascii_digit() || c == '_');
         }
 
-        // Exponent.
         if matches!(self.current(), Some('e' | 'E')) {
             is_float = true;
-            self.advance(); // 'e'
+            self.advance();
             if matches!(self.current(), Some('+' | '-')) {
                 self.advance();
             }
@@ -389,8 +326,6 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Parse the (underscore-allowed) `digits` in `radix` and emit an integer,
-    /// recording an error if it's empty or overflows `u128`.
     fn finish_integer(&mut self, digits: &str, radix: Radix, start: Mark) {
         let cleaned: String = digits.chars().filter(|&c| c != '_').collect();
         if cleaned.is_empty() {
@@ -405,7 +340,7 @@ impl<'source> Lexer<'source> {
 
     fn lex_string(&mut self) {
         let start = self.mark();
-        self.advance(); // opening quote
+        self.advance();
         let Some(raw) = self.collect_quoted(start, '"', LexErrorKind::UnterminatedString) else {
             return;
         };
@@ -413,12 +348,10 @@ impl<'source> Lexer<'source> {
         self.emit(TokenKind::String(utf8(bytes)), start);
     }
 
-    /// Lex a `b"..."` byte string or `c"..."` C string. The `b`/`c` prefix and
-    /// the opening quote are still pending at the cursor.
     fn lex_prefixed_string(&mut self, flavor: StringFlavor) {
         let start = self.mark();
-        self.advance(); // prefix letter (`b` or `c`)
-        self.advance(); // opening quote
+        self.advance();
+        self.advance();
         let Some(raw) = self.collect_quoted(start, '"', LexErrorKind::UnterminatedString) else {
             return;
         };
@@ -435,7 +368,7 @@ impl<'source> Lexer<'source> {
 
     fn lex_character(&mut self) {
         let start = self.mark();
-        self.advance(); // opening quote
+        self.advance();
         let Some(raw) = self.collect_quoted(start, '\'', LexErrorKind::UnterminatedCharacter)
         else {
             return;
@@ -449,18 +382,12 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// A Zig-style multiline string: one or more consecutive lines each
-    /// beginning (after optional leading whitespace) with `\\`. The text after
-    /// each marker is taken **verbatim** (no escape processing — these are raw),
-    /// lines are joined with `\n`, and there is no trailing newline. The string
-    /// ends at the first line that does not start with a `\\` marker.
     fn lex_multiline_string(&mut self) {
         let start = self.mark();
         let mut value = String::new();
         loop {
-            self.advance(); // first '\'
-            self.advance(); // second '\'
-            // Rest of this line is content, taken verbatim.
+            self.advance();
+            self.advance();
             while let Some(c) = self.current() {
                 if c == '\n' || c == '\r' {
                     break;
@@ -470,22 +397,18 @@ impl<'source> Lexer<'source> {
             }
             if self.next_line_continues_multiline() {
                 value.push('\n');
-                self.advance(); // '\r' or '\n'
+                self.advance();
                 if self.current() == Some('\n') {
-                    self.advance(); // '\n' of a '\r\n' pair
+                    self.advance();
                 }
                 self.consume_while(|c| c == ' ' || c == '\t');
             } else {
-                // Leave the trailing line break for the main loop to emit as a
-                // statement-terminating Newline.
                 break;
             }
         }
         self.emit(TokenKind::String(value), start);
     }
 
-    /// Peek (without consuming) whether the next line, after its line break and
-    /// leading whitespace, opens with a `\\` multiline marker.
     fn next_line_continues_multiline(&self) -> bool {
         let mut index = self.index;
         let char_at = |index: usize| self.characters.get(index).map(|&(_, c)| c);
@@ -497,7 +420,7 @@ impl<'source> Lexer<'source> {
                 }
             }
             Some('\n') => index += 1,
-            _ => return false, // EOF or no line break ⇒ string is finished
+            _ => return false,
         }
         while matches!(char_at(index), Some(' ') | Some('\t')) {
             index += 1;
@@ -505,12 +428,12 @@ impl<'source> Lexer<'source> {
         char_at(index) == Some('\\') && char_at(index + 1) == Some('\\')
     }
 
-    /// Read raw literal text up to (and consuming) the closing `quote`,
-    /// preserving backslash escapes verbatim for later decoding. A backslash
-    /// pairs with the following character so an escaped quote does not close the
-    /// literal. Records `unterminated` and returns `None` on a raw newline or
-    /// end of input.
-    fn collect_quoted(&mut self, start: Mark, quote: char, unterminated: LexErrorKind) -> Option<String> {
+    fn collect_quoted(
+        &mut self,
+        start: Mark,
+        quote: char,
+        unterminated: LexErrorKind,
+    ) -> Option<String> {
         let mut raw = String::new();
         loop {
             match self.current() {
@@ -526,8 +449,8 @@ impl<'source> Lexer<'source> {
                     raw.push('\\');
                     self.advance();
                     match self.current() {
-                        // A backslash before a line break is a dangling escape
-                        // (no string continuation in v1) — treat as unterminated.
+                        // A backslash before a line break is a dangling escape, not a continuation:
+                        // the literal is unterminated.
                         None | Some('\n') | Some('\r') => {
                             self.error(unterminated, start);
                             return None;
@@ -546,13 +469,6 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Decode backslash escapes in already-collected literal text into bytes,
-    /// applying the per-flavor `rules`. Errors are reported against the
-    /// literal's start; recovery continues past a bad escape so one mistake
-    /// doesn't swallow the rest of the literal.
-    ///
-    /// The result is the literal's bytes: for `"..."`/`'...'` and `c"..."` it is
-    /// valid UTF-8 by construction; for `b"..."` it may be arbitrary bytes.
     fn decode_literal(&mut self, text: &str, rules: EscapeRules, start: Mark) -> Vec<u8> {
         let mut out = Vec::new();
         let mut chars = text.chars().peekable();
@@ -597,9 +513,6 @@ impl<'source> Lexer<'source> {
         out
     }
 
-    /// Append an unescaped source character to a literal's bytes, enforcing the
-    /// flavor's content rules (byte strings are ASCII-only; C strings reject a
-    /// raw NUL).
     fn push_raw_char(&mut self, out: &mut Vec<u8>, c: char, rules: EscapeRules, start: Mark) {
         if rules.ascii_only_raw && !c.is_ascii() {
             self.error(LexErrorKind::NonAsciiByteString, start);
@@ -612,9 +525,12 @@ impl<'source> Lexer<'source> {
         push_utf8(out, c);
     }
 
-    /// `\xHH` — exactly two hex digits. The allowed range depends on the flavor:
-    /// ASCII (0x00–0x7F) for `"..."`/`'...'`, full 0x00–0xFF for byte/C strings.
-    fn read_hex_escape(&mut self, chars: &mut Peekable<Chars<'_>>, rules: EscapeRules, start: Mark) -> Option<u8> {
+    fn read_hex_escape(
+        &mut self,
+        chars: &mut Peekable<Chars<'_>>,
+        rules: EscapeRules,
+        start: Mark,
+    ) -> Option<u8> {
         let mut value = 0u32;
         for _ in 0..2 {
             match chars.next().and_then(|c| c.to_digit(16)) {
@@ -636,10 +552,11 @@ impl<'source> Lexer<'source> {
         Some(value as u8)
     }
 
-    /// `\u{H...}` — 1 to 6 hex digits in braces, underscores allowed between
-    /// digits (not leading), resolving to a valid scalar value (≤ 0x10FFFF, not
-    /// a surrogate).
-    fn read_unicode_escape(&mut self, chars: &mut Peekable<Chars<'_>>, start: Mark) -> Option<char> {
+    fn read_unicode_escape(
+        &mut self,
+        chars: &mut Peekable<Chars<'_>>,
+        start: Mark,
+    ) -> Option<char> {
         if chars.next() != Some('{') {
             self.error(LexErrorKind::InvalidUnicodeEscape, start);
             return None;
@@ -655,7 +572,7 @@ impl<'source> Lexer<'source> {
             }
             if c == '_' {
                 if digit_count == 0 {
-                    self.error(LexErrorKind::InvalidUnicodeEscape, start); // leading underscore
+                    self.error(LexErrorKind::InvalidUnicodeEscape, start);
                     return None;
                 }
                 chars.next();
@@ -686,14 +603,11 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    /// Lex an operator or punctuation token via maximal munch.
-    ///
-    /// Note: `>>` / `>>=` are produced greedily; a parser handling nested
-    /// generics like `List<List<i32>>` must split a trailing `>>` itself.
+    // `>>` / `>>=` are munched greedily; the parser splits a trailing `>>` in nested generics.
     fn lex_operator(&mut self, c: char) {
         use TokenKind::*;
         let start = self.mark();
-        self.advance(); // consume `c`
+        self.advance();
 
         let kind = match c {
             '+' => self.choose('=', PlusEqual, Plus),
@@ -798,8 +712,6 @@ impl<'source> Lexer<'source> {
         self.emit(kind, start);
     }
 
-    /// If the next character is `next`, consume it and return `with_equal`;
-    /// otherwise return `plain`. Used for the common `op` / `op=` split.
     fn choose(&mut self, next: char, with_next: TokenKind, plain: TokenKind) -> TokenKind {
         if self.match_char(next) {
             with_next
@@ -809,14 +721,11 @@ impl<'source> Lexer<'source> {
     }
 }
 
-/// Append a character's UTF-8 encoding to a byte buffer.
 fn push_utf8(out: &mut Vec<u8>, c: char) {
     let mut buffer = [0u8; 4];
     out.extend_from_slice(c.encode_utf8(&mut buffer).as_bytes());
 }
 
-/// Convert literal bytes known to be valid UTF-8 (string/char flavors) into a
-/// `String`. The bytes are valid by construction, so this never fails.
 fn utf8(bytes: Vec<u8>) -> String {
     String::from_utf8(bytes).expect("string/char literal decodes to valid UTF-8")
 }

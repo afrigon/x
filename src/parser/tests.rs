@@ -1,16 +1,13 @@
 use crate::ast::Expression;
 use crate::lexer;
 
-/// Lex and parse `source` as a single expression, asserting no lex errors and
-/// a successful parse.
 fn parse(source: &str) -> Expression {
     let (tokens, errors) = lexer::tokenize(source);
     assert!(errors.is_empty(), "lex errors: {errors:?}");
     super::parse_expression(tokens).unwrap_or_else(|error| panic!("parse error: {error}"))
 }
 
-/// Parse `source` and render the result as an s-expression for comparison.
-fn sexpr(source: &str) -> String {
+fn s_expression(source: &str) -> String {
     parse(source).to_string()
 }
 
@@ -24,104 +21,102 @@ fn parse_error(source: &str) -> String {
 
 #[test]
 fn literals() {
-    assert_eq!(sexpr("42"), "42");
-    assert_eq!(sexpr("0xFF"), "255");
-    assert_eq!(sexpr("3.14"), "3.14");
-    assert_eq!(sexpr(r#""hi""#), "\"hi\"");
-    assert_eq!(sexpr("'a'"), "'a'");
-    assert_eq!(sexpr("true"), "true");
-    assert_eq!(sexpr("false"), "false");
-    assert_eq!(sexpr("count"), "count");
+    assert_eq!(s_expression("42"), "42");
+    assert_eq!(s_expression("0xFF"), "255");
+    assert_eq!(s_expression("3.14"), "3.14");
+    assert_eq!(s_expression(r#""hi""#), "\"hi\"");
+    assert_eq!(s_expression("'a'"), "'a'");
+    assert_eq!(s_expression("true"), "true");
+    assert_eq!(s_expression("false"), "false");
+    assert_eq!(s_expression("count"), "count");
 }
 
 #[test]
 fn multiplicative_binds_tighter_than_additive() {
-    assert_eq!(sexpr("1 + 2 * 3"), "(+ 1 (* 2 3))");
-    assert_eq!(sexpr("1 * 2 + 3"), "(+ (* 1 2) 3)");
+    assert_eq!(s_expression("1 + 2 * 3"), "(+ 1 (* 2 3))");
+    assert_eq!(s_expression("1 * 2 + 3"), "(+ (* 1 2) 3)");
 }
 
 #[test]
 fn binary_operators_are_left_associative() {
-    assert_eq!(sexpr("1 - 2 - 3"), "(- (- 1 2) 3)");
-    assert_eq!(sexpr("a / b / c"), "(/ (/ a b) c)");
+    assert_eq!(s_expression("1 - 2 - 3"), "(- (- 1 2) 3)");
+    assert_eq!(s_expression("a / b / c"), "(/ (/ a b) c)");
 }
 
 #[test]
 fn grouping_overrides_precedence() {
-    assert_eq!(sexpr("(1 + 2) * 3"), "(* (+ 1 2) 3)");
+    assert_eq!(s_expression("(1 + 2) * 3"), "(* (+ 1 2) 3)");
 }
 
 #[test]
 fn full_precedence_ladder() {
-    // shift (9) > bitwise-and `&&` (8) > equality (4) > boolean-and `&` (3).
-    assert_eq!(sexpr("a & b = c && d << e"), "(& a (= b (&& c (<< d e))))");
-    // additive (10) > shift (9).
-    assert_eq!(sexpr("1 + 2 << 3"), "(<< (+ 1 2) 3)");
-    // bitwise `&&` (8) > `^^` (7) > `||` (6).
-    assert_eq!(sexpr("a && b ^^ c || d"), "(|| (^^ (&& a b) c) d)");
+    assert_eq!(
+        s_expression("a & b = c && d << e"),
+        "(& a (= b (&& c (<< d e))))"
+    );
+    assert_eq!(s_expression("1 + 2 << 3"), "(<< (+ 1 2) 3)");
+    assert_eq!(s_expression("a && b ^^ c || d"), "(|| (^^ (&& a b) c) d)");
 }
 
 #[test]
 fn comparison_is_one_non_associative_level() {
-    assert_eq!(sexpr("a < b"), "(< a b)");
-    assert_eq!(sexpr("a = b"), "(= a b)");
-    // Comparison binds tighter than the boolean (logical) operators `&`/`|`.
-    assert_eq!(sexpr("a < b & c = d"), "(& (< a b) (= c d))");
-    // ...and looser than the bitwise band, so `a && b = c` is `(a && b) = c`.
-    assert_eq!(sexpr("a && b = c"), "(= (&& a b) c)");
+    assert_eq!(s_expression("a < b"), "(< a b)");
+    assert_eq!(s_expression("a = b"), "(= a b)");
+    assert_eq!(s_expression("a < b & c = d"), "(& (< a b) (= c d))");
+    assert_eq!(s_expression("a && b = c"), "(= (&& a b) c)");
 }
 
 #[test]
 fn chained_comparison_is_rejected() {
     assert!(parse_error("a < b < c").contains("chain"));
-    assert!(parse_error("a = b != c").contains("chain")); // mixed comparisons too
+    assert!(parse_error("a = b != c").contains("chain"));
 }
 
 #[test]
 fn unary_operators() {
-    assert_eq!(sexpr("-x"), "(- x)");
-    assert_eq!(sexpr("!!bits"), "(!! bits)");
-    // Unary binds tighter than binary: `-a * b` is `(* (- a) b)`.
-    assert_eq!(sexpr("-a * b"), "(* (- a) b)");
-    // `!a & b` — `!` is unary, `&` is boolean-and.
-    assert_eq!(sexpr("!a & b"), "(& (! a) b)");
+    assert_eq!(s_expression("-x"), "(- x)");
+    assert_eq!(s_expression("!!bits"), "(!! bits)");
+    assert_eq!(s_expression("-a * b"), "(* (- a) b)");
+    assert_eq!(s_expression("!a & b"), "(& (! a) b)");
 }
 
 #[test]
 fn calls_with_labels() {
-    assert_eq!(sexpr("f()"), "(call f)");
-    assert_eq!(sexpr("add(3, b: 5)"), "(call add 3 b: 5)");
-    assert_eq!(sexpr("greet(name: \"Alice\")"), "(call greet name: \"Alice\")");
+    assert_eq!(s_expression("f()"), "(call f)");
+    assert_eq!(s_expression("add(3, b: 5)"), "(call add 3 b: 5)");
+    assert_eq!(
+        s_expression("greet(name: \"Alice\")"),
+        "(call greet name: \"Alice\")"
+    );
 }
 
 #[test]
 fn field_access_and_method_chains() {
-    assert_eq!(sexpr("a.b.c"), "(. (. a b) c)");
-    assert_eq!(sexpr("x.cstr()"), "(call (. x cstr))");
-    // The Phase 1 hello-world call shape.
+    assert_eq!(s_expression("a.b.c"), "(. (. a b) c)");
+    assert_eq!(s_expression("x.cstr()"), "(call (. x cstr))");
     assert_eq!(
-        sexpr(r#"printf("hi".cstr())"#),
+        s_expression(r#"printf("hi".cstr())"#),
         "(call printf (call (. \"hi\" cstr)))",
     );
 }
 
 #[test]
 fn indexing() {
-    assert_eq!(sexpr("a[i]"), "(index a i)");
-    assert_eq!(sexpr("grid[x][y]"), "(index (index grid x) y)");
-    assert_eq!(sexpr("a[i + 1]"), "(index a (+ i 1))");
+    assert_eq!(s_expression("a[i]"), "(index a i)");
+    assert_eq!(s_expression("grid[x][y]"), "(index (index grid x) y)");
+    assert_eq!(s_expression("a[i + 1]"), "(index a (+ i 1))");
 }
 
 #[test]
 fn implicit_member() {
-    assert_eq!(sexpr(".plus"), ".plus");
-    assert_eq!(sexpr(".number(5)"), "(call .number 5)");
+    assert_eq!(s_expression(".plus"), ".plus");
+    assert_eq!(s_expression(".number(5)"), "(call .number 5)");
 }
 
 #[test]
 fn argument_list_may_span_lines() {
     let source = "f(\n    1,\n    b: 2,\n)";
-    assert_eq!(sexpr(source), "(call f 1 b: 2)");
+    assert_eq!(s_expression(source), "(call f 1 b: 2)");
 }
 
 #[test]
@@ -139,9 +134,6 @@ fn reports_leftover_tokens() {
     assert!(parse_error("1 2").contains("unexpected"));
 }
 
-// ---- Types ----------------------------------------------------------
-
-/// Lex and parse `source` as a type, rendering it back to canonical form.
 fn type_of(source: &str) -> String {
     let (tokens, errors) = lexer::tokenize(source);
     assert!(errors.is_empty(), "lex errors: {errors:?}");
@@ -153,7 +145,9 @@ fn type_of(source: &str) -> String {
 fn type_error(source: &str) -> String {
     let (tokens, errors) = lexer::tokenize(source);
     assert!(errors.is_empty(), "lex errors: {errors:?}");
-    super::parse_type(tokens).expect_err("expected a parse error").message
+    super::parse_type(tokens)
+        .expect_err("expected a parse error")
+        .message
 }
 
 #[test]
@@ -162,7 +156,10 @@ fn named_and_generic_types() {
     assert_eq!(type_of("string"), "string");
     assert_eq!(type_of("Self"), "Self");
     assert_eq!(type_of("List<i32>"), "List<i32>");
-    assert_eq!(type_of("HashMap<string, List<i32>>"), "HashMap<string, List<i32>>");
+    assert_eq!(
+        type_of("HashMap<string, List<i32>>"),
+        "HashMap<string, List<i32>>"
+    );
 }
 
 #[test]
@@ -186,20 +183,20 @@ fn optional_and_result_suffixes() {
     assert_eq!(type_of("string?"), "string?");
     assert_eq!(type_of("i32!IoError"), "i32!IoError");
     assert_eq!(type_of("List<Token>!LexError"), "List<Token>!LexError");
-    // Suffixes chain left-to-right.
     assert_eq!(type_of("T?!E"), "T?!E");
     assert_eq!(type_of("T!E?"), "T!E?");
 }
 
 #[test]
 fn prefix_binds_tighter_than_optional_suffix() {
-    // `&mut Node?` is an optional reference: Optional(Reference(..)).
-    let ty = {
+    let parsed_type = {
         let (tokens, _) = lexer::tokenize("&mut Node?");
         super::parse_type(tokens).unwrap()
     };
-    assert!(matches!(ty.kind, crate::ast::TypeKind::Optional(_)));
-    // Grouping forces the suffix inside the pointer.
+    assert!(matches!(
+        parsed_type.kind,
+        crate::ast::TypeKind::Optional(_)
+    ));
     assert_eq!(type_of("*(u8?)"), "*u8?");
 }
 
@@ -226,9 +223,6 @@ fn grouping_is_not_a_tuple() {
     assert!(type_error("()").contains("not a type"));
 }
 
-// ---- Statements & blocks --------------------------------------------
-
-/// Lex and parse `source` as a `{ ... }` block, rendered as an s-expression.
 fn block(source: &str) -> String {
     let (tokens, errors) = lexer::tokenize(source);
     assert!(errors.is_empty(), "lex errors: {errors:?}");
@@ -240,7 +234,9 @@ fn block(source: &str) -> String {
 fn block_error(source: &str) -> String {
     let (tokens, errors) = lexer::tokenize(source);
     assert!(errors.is_empty(), "lex errors: {errors:?}");
-    super::parse_block(tokens).expect_err("expected a parse error").message
+    super::parse_block(tokens)
+        .expect_err("expected a parse error")
+        .message
 }
 
 #[test]
@@ -251,21 +247,28 @@ fn empty_block_is_unit_valued() {
 
 #[test]
 fn let_bindings() {
-    // `let` is a statement, never the trailing value — so no `=>`.
     assert_eq!(block("{ let x := 5 }"), "(block (let x := 5))");
-    assert_eq!(block("{ let mut count := 0 }"), "(block (let mut count := 0))");
-    assert_eq!(block("{ let pi: f64 := 3.14159 }"), "(block (let pi: f64 := 3.14159))");
+    assert_eq!(
+        block("{ let mut count := 0 }"),
+        "(block (let mut count := 0))"
+    );
+    assert_eq!(
+        block("{ let pi: f64 := 3.14159 }"),
+        "(block (let pi: f64 := 3.14159))"
+    );
 }
 
 #[test]
 fn let_is_a_statement_not_a_block_value() {
-    // A `let` is never the trailing value, so the block stays unit-valued.
     assert_eq!(block("{ let x := 5\nx }"), "(block (let x := 5) => x)");
 }
 
 #[test]
 fn assignment_and_compound_assignment() {
-    assert_eq!(block("{ count := count + 1 }"), "(block (:= count (+ count 1)))");
+    assert_eq!(
+        block("{ count := count + 1 }"),
+        "(block (:= count (+ count 1)))"
+    );
     assert_eq!(block("{ total += x }"), "(block (+= total x))");
     assert_eq!(block("{ flags ||= mask }"), "(block (||= flags mask))");
     assert_eq!(block("{ a.b := 1 }"), "(block (:= (. a b) 1))");
@@ -301,13 +304,11 @@ fn nested_blocks_and_let_with_block_value() {
 
 #[test]
 fn statements_must_be_newline_separated() {
-    // Two expressions on one line with no newline between them is an error.
     assert!(block_error("{ a b }").contains("newline"));
 }
 
 #[test]
 fn parses_the_phase_one_main_body() {
-    // The body of the Phase 1 hello-world `main`, using a C string literal.
     assert_eq!(
         block("{\n    unsafe {\n        printf(c\"hello, world\\n\")\n    }\n}"),
         "(block => (unsafe (block => (call printf c\"hello, world\\n\"))))",

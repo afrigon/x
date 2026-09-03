@@ -1,9 +1,3 @@
-//! The `x` bootstrap compiler (written in Rust).
-//!
-//! Currently just the lexer, exposed through an `x lex <file>` command that
-//! dumps the token stream — useful for eyeballing the lexer on real `.x`
-//! source while the rest of the frontend is built out.
-
 mod ast;
 mod lexer;
 mod parser;
@@ -23,9 +17,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Lex a source file and print the resulting token stream.
+    #[command(about = "Lex a source file and print the resulting token stream")]
     Lex {
-        /// Path to the `.x` source file.
+        #[arg(help = "Path to the .x source file")]
         file: PathBuf,
     },
 }

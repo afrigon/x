@@ -1,28 +1,10 @@
-//! Recursive-descent parser for `x`.
-//!
-//! This covers the **expression** grammar (literals, names, the leading-dot
-//! implicit member, prefix operators, the postfix call/field/index chain, and
-//! infix operators by precedence climbing over `LANGUAGE.md` §11) and the
-//! **type** grammar (named/generic, references, raw pointers, `[T]`/`[T; N]`,
-//! `T?`, `T!E`, function types), and **statements** (`let`/`let mut`,
-//! assignment, `return`, expression statements) inside brace blocks, including
-//! `unsafe { ... }`. Control-flow expressions (`if`/`match`/`loop`/`guard`) and
-//! items (`fun` declarations) follow in later rounds.
-//!
-//! Newlines: a single expression does not span source lines (a `Newline` ends
-//! it), but newlines are insignificant *inside* brackets — `(...)`, `[...]`,
-//! and argument lists — so call/argument lists may wrap. (Line continuation
-//! after a trailing operator is a separate policy, deferred.)
-
 use crate::ast::{
-    Argument, AssignmentOperator, BinaryOperator, Expression, ExpressionKind, Precedence, Statement,
-    StatementKind, Type, TypeKind, UnaryOperator,
+    Argument, AssignmentOperator, BinaryOperator, Expression, ExpressionKind, Precedence,
+    Statement, StatementKind, Type, TypeKind, UnaryOperator,
 };
 use crate::token::{Span, Token, TokenKind};
 use std::fmt;
 
-/// A parse failure at a particular span. The parser stops at the first error
-/// for now; recovery (multiple errors per parse) comes with the item grammar.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParseError {
     pub message: String,
@@ -31,14 +13,16 @@ pub struct ParseError {
 
 impl fmt::Display for ParseError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "line {}, column {}: {}", self.span.line, self.span.column, self.message)
+        write!(
+            formatter,
+            "line {}, column {}: {}",
+            self.span.line, self.span.column, self.message
+        )
     }
 }
 
 type Parse<T> = Result<T, ParseError>;
 
-/// Parse a single expression from a token stream (as produced by the lexer,
-/// terminated by `Eof`). Errors if there are leftover tokens after it.
 pub fn parse_expression(tokens: Vec<Token>) -> Parse<Expression> {
     let mut parser = Parser::new(tokens);
     parser.skip_newlines();
@@ -53,7 +37,6 @@ pub fn parse_expression(tokens: Vec<Token>) -> Parse<Expression> {
     Ok(expression)
 }
 
-/// Parse a single `{ ... }` block from a token stream. Errors on leftovers.
 pub fn parse_block(tokens: Vec<Token>) -> Parse<Expression> {
     let mut parser = Parser::new(tokens);
     parser.skip_newlines();
@@ -68,7 +51,6 @@ pub fn parse_block(tokens: Vec<Token>) -> Parse<Expression> {
     Ok(block)
 }
 
-/// Parse a single type from a token stream. Errors on leftover tokens.
 pub fn parse_type(tokens: Vec<Token>) -> Parse<Type> {
     let mut parser = Parser::new(tokens);
     parser.skip_newlines();
@@ -90,10 +72,11 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Parser { tokens, position: 0 }
+        Parser {
+            tokens,
+            position: 0,
+        }
     }
-
-    // ---- Cursor --------------------------------------------------------
 
     fn current(&self) -> &Token {
         &self.tokens[self.position]
@@ -107,7 +90,6 @@ impl Parser {
         self.tokens[self.position].span
     }
 
-    /// The kind `offset` tokens ahead, clamped to the trailing `Eof`.
     fn peek_kind(&self, offset: usize) -> &TokenKind {
         let index = (self.position + offset).min(self.tokens.len() - 1);
         &self.tokens[index].kind
@@ -156,14 +138,12 @@ impl Parser {
     }
 
     fn error_here(&self, message: String) -> ParseError {
-        ParseError { message, span: self.current_span() }
+        ParseError {
+            message,
+            span: self.current_span(),
+        }
     }
 
-    // ---- Expressions ---------------------------------------------------
-
-    /// Precedence climbing: parse a unary operand, then fold in infix operators
-    /// whose precedence is at least `minimum`. Left-associative (recurse at
-    /// `precedence + 1`).
     fn parse_binary(&mut self, minimum: Precedence) -> Parse<Expression> {
         let mut left = self.parse_unary()?;
         while let Some(operator) = binary_operator(self.current_kind()) {
@@ -171,7 +151,7 @@ impl Parser {
             if precedence < minimum {
                 break;
             }
-            self.advance(); // the operator
+            self.advance();
             let right = self.parse_binary(precedence + 1)?;
             let span = left.span.to(right.span);
             left = Expression::new(
@@ -182,8 +162,6 @@ impl Parser {
                 },
                 span,
             );
-            // Non-associative operators (comparisons) may not chain: a second
-            // operator of the same precedence is a parse error, not a fold.
             if operator.is_non_associative()
                 && binary_operator(self.current_kind())
                     .is_some_and(|next| next.precedence() == precedence)
@@ -211,12 +189,14 @@ impl Parser {
         let operand = self.parse_unary()?;
         let span = start.to(operand.span);
         Ok(Expression::new(
-            ExpressionKind::Unary { operator, operand: Box::new(operand) },
+            ExpressionKind::Unary {
+                operator,
+                operand: Box::new(operand),
+            },
             span,
         ))
     }
 
-    /// Apply zero or more postfix operators (call, field, index) to a primary.
     fn parse_postfix(&mut self) -> Parse<Expression> {
         let mut expression = self.parse_primary()?;
         loop {
@@ -231,7 +211,7 @@ impl Parser {
     }
 
     fn parse_call(&mut self, callee: Expression) -> Parse<Expression> {
-        self.advance(); // '('
+        self.advance();
         self.skip_newlines();
         let mut arguments = Vec::new();
         while !self.check(&TokenKind::RightParenthesis) {
@@ -245,19 +225,21 @@ impl Parser {
         let close = self.expect(&TokenKind::RightParenthesis, "`)`")?;
         let span = callee.span.to(close.span);
         Ok(Expression::new(
-            ExpressionKind::Call { callee: Box::new(callee), arguments },
+            ExpressionKind::Call {
+                callee: Box::new(callee),
+                arguments,
+            },
             span,
         ))
     }
 
     fn parse_argument(&mut self) -> Parse<Argument> {
-        // A leading `identifier :` is a Swift-style argument label.
         let label = match (self.current_kind(), self.peek_kind(1)) {
             (TokenKind::Identifier(name), TokenKind::Colon) => {
                 let name = name.clone();
                 let start = self.current_span();
-                self.advance(); // identifier
-                self.advance(); // ':'
+                self.advance();
+                self.advance();
                 self.skip_newlines();
                 Some((name, start))
             }
@@ -268,29 +250,41 @@ impl Parser {
             Some((_, start)) => start.to(value.span),
             None => value.span,
         };
-        Ok(Argument { label: label.map(|(name, _)| name), value, span })
+        Ok(Argument {
+            label: label.map(|(name, _)| name),
+            value,
+            span,
+        })
     }
 
     fn parse_field(&mut self, receiver: Expression) -> Parse<Expression> {
-        self.advance(); // '.'
+        self.advance();
         let name_token = self.expect_identifier("a field name")?;
-        let TokenKind::Identifier(name) = name_token.kind else { unreachable!() };
+        let TokenKind::Identifier(name) = name_token.kind else {
+            unreachable!()
+        };
         let span = receiver.span.to(name_token.span);
         Ok(Expression::new(
-            ExpressionKind::Field { receiver: Box::new(receiver), name },
+            ExpressionKind::Field {
+                receiver: Box::new(receiver),
+                name,
+            },
             span,
         ))
     }
 
     fn parse_index(&mut self, receiver: Expression) -> Parse<Expression> {
-        self.advance(); // '['
+        self.advance();
         self.skip_newlines();
         let index = self.parse_binary(0)?;
         self.skip_newlines();
         let close = self.expect(&TokenKind::RightBracket, "`]`")?;
         let span = receiver.span.to(close.span);
         Ok(Expression::new(
-            ExpressionKind::Index { receiver: Box::new(receiver), index: Box::new(index) },
+            ExpressionKind::Index {
+                receiver: Box::new(receiver),
+                index: Box::new(index),
+            },
             span,
         ))
     }
@@ -324,7 +318,7 @@ impl Parser {
     }
 
     fn parse_grouping(&mut self) -> Parse<Expression> {
-        let open = self.advance().span; // '('
+        let open = self.advance().span;
         self.skip_newlines();
         let mut inner = self.parse_binary(0)?;
         self.skip_newlines();
@@ -334,9 +328,11 @@ impl Parser {
     }
 
     fn parse_implicit_member(&mut self) -> Parse<Expression> {
-        let dot = self.advance().span; // '.'
+        let dot = self.advance().span;
         let name_token = self.expect_identifier("a member name after `.`")?;
-        let TokenKind::Identifier(name) = name_token.kind else { unreachable!() };
+        let TokenKind::Identifier(name) = name_token.kind else {
+            unreachable!()
+        };
         let span = dot.to(name_token.span);
         Ok(Expression::new(ExpressionKind::ImplicitMember(name), span))
     }
@@ -352,11 +348,7 @@ impl Parser {
         }
     }
 
-    // ---- Types ---------------------------------------------------------
-
-    /// Parse a type, then apply trailing `?` / `!E` suffixes. Prefix modifiers
-    /// (`&`, `*`) bind tighter than these suffixes, so `&mut Node?` is
-    /// `(&mut Node)?` — an optional reference — matching `LANGUAGE.md` §16.12.
+    // Prefix `&` / `*` bind tighter than the `?` / `!E` suffixes: `&mut Node?` is `(&mut Node)?`.
     fn parse_type(&mut self) -> Parse<Type> {
         let mut parsed = self.parse_prefix_type()?;
         loop {
@@ -371,7 +363,10 @@ impl Parser {
                     let error = self.parse_prefix_type()?;
                     let span = parsed.span.to(error.span);
                     parsed = Type::new(
-                        TypeKind::Result { value: Box::new(parsed), error: Box::new(error) },
+                        TypeKind::Result {
+                            value: Box::new(parsed),
+                            error: Box::new(error),
+                        },
                         span,
                     );
                 }
@@ -381,8 +376,6 @@ impl Parser {
         Ok(parsed)
     }
 
-    /// Parse the prefix layer: references, raw pointers, and function types,
-    /// falling through to an atom. Recurses so `&*T` and `*mut &T` nest.
     fn parse_prefix_type(&mut self) -> Parse<Type> {
         match self.current_kind() {
             TokenKind::Ampersand => {
@@ -391,7 +384,10 @@ impl Parser {
                 let referent = self.parse_prefix_type()?;
                 let span = ampersand.span.to(referent.span);
                 Ok(Type::new(
-                    TypeKind::Reference { mutable, referent: Box::new(referent) },
+                    TypeKind::Reference {
+                        mutable,
+                        referent: Box::new(referent),
+                    },
                     span,
                 ))
             }
@@ -400,7 +396,13 @@ impl Parser {
                 let mutable = self.eat(&TokenKind::Mut);
                 let pointee = self.parse_prefix_type()?;
                 let span = star.span.to(pointee.span);
-                Ok(Type::new(TypeKind::Pointer { mutable, pointee: Box::new(pointee) }, span))
+                Ok(Type::new(
+                    TypeKind::Pointer {
+                        mutable,
+                        pointee: Box::new(pointee),
+                    },
+                    span,
+                ))
             }
             TokenKind::Fun => self.parse_function_type(),
             _ => self.parse_atom_type(),
@@ -418,13 +420,22 @@ impl Parser {
                     let span = token.span.to(close);
                     Ok(Type::new(TypeKind::Named { name, arguments }, span))
                 } else {
-                    Ok(Type::new(TypeKind::Named { name, arguments: Vec::new() }, token.span))
+                    Ok(Type::new(
+                        TypeKind::Named {
+                            name,
+                            arguments: Vec::new(),
+                        },
+                        token.span,
+                    ))
                 }
             }
             TokenKind::SelfType => {
                 self.advance();
                 Ok(Type::new(
-                    TypeKind::Named { name: "Self".to_string(), arguments: Vec::new() },
+                    TypeKind::Named {
+                        name: "Self".to_string(),
+                        arguments: Vec::new(),
+                    },
                     token.span,
                 ))
             }
@@ -434,10 +445,8 @@ impl Parser {
         }
     }
 
-    /// Generic arguments `<T, U>`. Returns the arguments and the span of the
-    /// closing `>` (which may have been split out of a `>>` token).
     fn parse_generic_arguments(&mut self) -> Parse<(Vec<Type>, Span)> {
-        self.advance(); // '<'
+        self.advance();
         self.skip_newlines();
         let mut arguments = Vec::new();
         loop {
@@ -448,7 +457,7 @@ impl Parser {
             }
             self.skip_newlines();
             if self.at_generic_close() {
-                break; // trailing comma
+                break;
             }
         }
         let close = self.expect_generic_close()?;
@@ -456,12 +465,13 @@ impl Parser {
     }
 
     fn at_generic_close(&self) -> bool {
-        matches!(self.current_kind(), TokenKind::Greater | TokenKind::ShiftRight)
+        matches!(
+            self.current_kind(),
+            TokenKind::Greater | TokenKind::ShiftRight
+        )
     }
 
-    /// Consume the `>` closing a generic list, splitting a `>>` token (produced
-    /// by the lexer's maximal munch on nested generics like `List<List<i32>>`)
-    /// into two `>` — consuming the first here and leaving the second.
+    // The lexer munches `>>` greedily, so `List<List<i32>>` closes with one token split in two.
     fn expect_generic_close(&mut self) -> Parse<Span> {
         match self.current_kind() {
             TokenKind::Greater => Ok(self.advance().span),
@@ -473,14 +483,15 @@ impl Parser {
                     Span::new(span.start + 1, span.end, span.line, span.column + 1);
                 Ok(first)
             }
-            _ => Err(self
-                .error_here(format!("expected `>`, found {}", self.current_kind().describe()))),
+            _ => Err(self.error_here(format!(
+                "expected `>`, found {}",
+                self.current_kind().describe()
+            ))),
         }
     }
 
-    /// `(T)` is grouping. `()` and `(T, U)` are rejected — there are no tuples.
     fn parse_grouped_type(&mut self) -> Parse<Type> {
-        self.advance(); // '('
+        self.advance();
         self.skip_newlines();
         if self.check(&TokenKind::RightParenthesis) {
             return Err(self.error_here(
@@ -499,7 +510,7 @@ impl Parser {
     }
 
     fn parse_array_or_slice_type(&mut self) -> Parse<Type> {
-        let open = self.advance(); // '['
+        let open = self.advance();
         self.skip_newlines();
         let element = self.parse_type()?;
         self.skip_newlines();
@@ -510,7 +521,10 @@ impl Parser {
             let close = self.expect(&TokenKind::RightBracket, "`]`")?;
             let span = open.span.to(close.span);
             Ok(Type::new(
-                TypeKind::Array { element: Box::new(element), size: Box::new(size) },
+                TypeKind::Array {
+                    element: Box::new(element),
+                    size: Box::new(size),
+                },
                 span,
             ))
         } else {
@@ -521,7 +535,7 @@ impl Parser {
     }
 
     fn parse_function_type(&mut self) -> Parse<Type> {
-        let start = self.advance(); // 'fun'
+        let start = self.advance();
         self.expect(&TokenKind::LeftParenthesis, "`(`")?;
         self.skip_newlines();
         let mut parameters = Vec::new();
@@ -550,13 +564,16 @@ impl Parser {
             (None, close.span)
         };
         let span = start.span.to(end);
-        Ok(Type::new(TypeKind::Function { parameters, variadic, result }, span))
+        Ok(Type::new(
+            TypeKind::Function {
+                parameters,
+                variadic,
+                result,
+            },
+            span,
+        ))
     }
 
-    // ---- Blocks & statements -------------------------------------------
-
-    /// `{ statement* }`. A trailing bare expression becomes the block's value
-    /// (§9.5); otherwise the block is unit-valued.
     fn parse_block(&mut self) -> Parse<Expression> {
         let open = self.expect(&TokenKind::LeftBrace, "`{`")?;
         self.skip_newlines();
@@ -568,11 +585,15 @@ impl Parser {
         }
         let close = self.expect(&TokenKind::RightBrace, "`}`")?;
 
-        // The final statement, if it is a bare expression, is the block's value.
         let value = match statements.last() {
-            Some(Statement { kind: StatementKind::Expression(_), .. }) => {
-                let Some(Statement { kind: StatementKind::Expression(expression), .. }) =
-                    statements.pop()
+            Some(Statement {
+                kind: StatementKind::Expression(_),
+                ..
+            }) => {
+                let Some(Statement {
+                    kind: StatementKind::Expression(expression),
+                    ..
+                }) = statements.pop()
                 else {
                     unreachable!()
                 };
@@ -582,18 +603,22 @@ impl Parser {
         };
 
         let span = open.span.to(close.span);
-        Ok(Expression::new(ExpressionKind::Block { statements, value }, span))
+        Ok(Expression::new(
+            ExpressionKind::Block { statements, value },
+            span,
+        ))
     }
 
     fn parse_unsafe(&mut self) -> Parse<Expression> {
-        let start = self.advance(); // 'unsafe'
+        let start = self.advance();
         let block = self.parse_block()?;
         let span = start.span.to(block.span);
-        Ok(Expression::new(ExpressionKind::Unsafe(Box::new(block)), span))
+        Ok(Expression::new(
+            ExpressionKind::Unsafe(Box::new(block)),
+            span,
+        ))
     }
 
-    /// Accept a statement terminator: a newline, or the end of the enclosing
-    /// block / input (which terminate the final statement implicitly).
     fn expect_statement_end(&mut self) -> Parse<()> {
         match self.current_kind() {
             TokenKind::Newline => {
@@ -601,8 +626,10 @@ impl Parser {
                 Ok(())
             }
             TokenKind::RightBrace | TokenKind::Eof => Ok(()),
-            other => Err(self
-                .error_here(format!("expected a newline to end the statement, found {}", other.describe()))),
+            other => Err(self.error_here(format!(
+                "expected a newline to end the statement, found {}",
+                other.describe()
+            ))),
         }
     }
 
@@ -615,10 +642,12 @@ impl Parser {
     }
 
     fn parse_let(&mut self) -> Parse<Statement> {
-        let start = self.advance(); // 'let'
+        let start = self.advance();
         let mutable = self.eat(&TokenKind::Mut);
         let name_token = self.expect_identifier("a binding name")?;
-        let TokenKind::Identifier(name) = name_token.kind else { unreachable!() };
+        let TokenKind::Identifier(name) = name_token.kind else {
+            unreachable!()
+        };
         let annotation = if self.eat(&TokenKind::Colon) {
             Some(self.parse_type()?)
         } else {
@@ -629,14 +658,18 @@ impl Parser {
         let value = self.parse_binary(0)?;
         let span = start.span.to(value.span);
         Ok(Statement::new(
-            StatementKind::Let { mutable, name, annotation, value },
+            StatementKind::Let {
+                mutable,
+                name,
+                annotation,
+                value,
+            },
             span,
         ))
     }
 
     fn parse_return(&mut self) -> Parse<Statement> {
-        let keyword = self.advance(); // 'return'
-        // No value if the statement ends right here.
+        let keyword = self.advance();
         let value = match self.current_kind() {
             TokenKind::Newline | TokenKind::RightBrace | TokenKind::Eof => None,
             _ => Some(self.parse_binary(0)?),
@@ -648,26 +681,27 @@ impl Parser {
         Ok(Statement::new(StatementKind::Return(value), span))
     }
 
-    /// A statement that starts with an expression: either an assignment
-    /// (`target := value`, or a compound form) or a bare expression statement.
     fn parse_expression_or_assignment(&mut self) -> Parse<Statement> {
         let target = self.parse_binary(0)?;
         let Some(operator) = assignment_operator(self.current_kind()) else {
             let span = target.span;
             return Ok(Statement::new(StatementKind::Expression(target), span));
         };
-        self.advance(); // the assignment operator
+        self.advance();
         self.skip_newlines();
         let value = self.parse_binary(0)?;
         let span = target.span.to(value.span);
         Ok(Statement::new(
-            StatementKind::Assignment { operator, target, value },
+            StatementKind::Assignment {
+                operator,
+                target,
+                value,
+            },
             span,
         ))
     }
 }
 
-/// Map an infix token to its binary operator, or `None` if it isn't one.
 fn binary_operator(kind: &TokenKind) -> Option<BinaryOperator> {
     use BinaryOperator as Operator;
     Some(match kind {
@@ -694,7 +728,6 @@ fn binary_operator(kind: &TokenKind) -> Option<BinaryOperator> {
     })
 }
 
-/// Map a token to its assignment operator, or `None` if it isn't one.
 fn assignment_operator(kind: &TokenKind) -> Option<AssignmentOperator> {
     use AssignmentOperator as Operator;
     Some(match kind {
