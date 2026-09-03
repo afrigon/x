@@ -19,6 +19,7 @@
 - Name the `LANGUAGE.md` section when proposing a language change, so the update lands in one place.
 - The implementation follows `LANGUAGE.md` exactly. Where the specification is silent, the gap is recorded in Open decisions rather than decided in code.
 - Roadmap work is tracked as GitHub issues. An issue's acceptance criteria name the `LANGUAGE.md` sections it implements.
+- The language is specified in [`LANGUAGE.md`](LANGUAGE.md). Nothing in it is final: anything that does not make sense is worth flagging so the design improves. Quality is the first priority, and simplicity is never a reason to cut corners.
 
 ## Engineering decisions
 
