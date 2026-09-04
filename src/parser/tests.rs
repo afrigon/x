@@ -7,6 +7,16 @@ fn parse_program(source: &str) -> Result<Program, String> {
     super::parse_program(tokens).map_err(|error| error.message)
 }
 
+fn s_program(source: &str) -> String {
+    parse_program(source)
+        .unwrap_or_else(|error| panic!("parse error: {error}"))
+        .to_string()
+}
+
+fn program_error(source: &str) -> String {
+    parse_program(source).expect_err("expected a parse error")
+}
+
 fn parse(source: &str) -> Expression {
     let (tokens, errors) = lexer::tokenize(source);
     assert!(errors.is_empty(), "lex errors: {errors:?}");
@@ -333,4 +343,67 @@ fn a_statement_is_not_a_declaration() {
         parse_program("let count = 1\n").unwrap_err(),
         "expected a declaration, found let"
     );
+}
+
+#[test]
+fn function_with_labels_and_result() {
+    assert_eq!(
+        s_program("fun add(_ a: i32, b: i32) -> i32 { return a + b }\n"),
+        "(fun add (_ a: i32) (b: i32) -> i32 (block (return (+ a b))))\n"
+    );
+}
+
+#[test]
+fn unit_function_omits_the_arrow() {
+    assert_eq!(
+        s_program("fun greet(name: string) { send(name) }"),
+        "(fun greet (name: string) (block => (call send name)))\n"
+    );
+}
+
+#[test]
+fn external_and_internal_parameter_names() {
+    assert_eq!(
+        s_program("fun shift(to destination: Point) {}"),
+        "(fun shift (to destination: Point) (block))\n"
+    );
+}
+
+#[test]
+fn parameter_default_value() {
+    assert_eq!(
+        s_program("fun scale(by factor: i32 := 2) {}"),
+        "(fun scale (by factor: i32 := 2) (block))\n"
+    );
+}
+
+#[test]
+fn parameters_may_span_lines() {
+    assert_eq!(
+        s_program("fun pair(\n    _ a: i32,\n    _ b: i32,\n) {}\n"),
+        "(fun pair (_ a: i32) (_ b: i32) (block))\n"
+    );
+}
+
+#[test]
+fn several_declarations() {
+    assert_eq!(
+        s_program("fun one() {}\n\nfun two() {}\n"),
+        "(fun one (block))\n(fun two (block))\n"
+    );
+}
+
+#[test]
+fn parameter_without_type_annotation_is_an_error() {
+    assert!(program_error("fun f(a) {}").starts_with("expected `:` and a parameter type"));
+}
+
+#[test]
+fn underscore_needs_an_internal_name() {
+    assert!(program_error("fun f(_: i32) {}").starts_with("expected a parameter name after `_`"));
+}
+
+#[test]
+fn function_without_body_is_an_error() {
+    assert!(program_error("fun f()").starts_with("expected `{` to begin the function body"));
 }
