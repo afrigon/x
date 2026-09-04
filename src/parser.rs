@@ -109,6 +109,10 @@ impl Parser {
         self.tokens[self.position].span
     }
 
+    fn previous_span(&self) -> Span {
+        self.tokens[self.position.saturating_sub(1)].span
+    }
+
     fn peek_kind(&self, offset: usize) -> &TokenKind {
         let index = (self.position + offset).min(self.tokens.len() - 1);
         &self.tokens[index].kind
@@ -160,6 +164,13 @@ impl Parser {
         ParseError {
             message,
             span: self.current_span(),
+        }
+    }
+
+    fn error_at(&self, span: Span, message: &str) -> ParseError {
+        ParseError {
+            message: message.to_string(),
+            span,
         }
     }
 
@@ -645,36 +656,63 @@ impl Parser {
             .map_or(keyword.span, |attribute| attribute.span);
         let name = self.expect_identifier("a function name")?;
         self.expect(&TokenKind::LeftParenthesis, "`(` after the function name")?;
-        let parameters = self.parse_parameters()?;
+        let (parameters, ellipsis) = self.parse_parameters()?;
         let result = if self.eat(&TokenKind::Arrow) {
             Some(self.parse_type()?)
         } else {
             None
         };
-        if !self.check(&TokenKind::LeftBrace) {
+        let foreign = attributes
+            .iter()
+            .any(|attribute| attribute.name == "extern");
+        let body = if self.check(&TokenKind::LeftBrace) {
+            Some(self.parse_block()?)
+        } else if foreign {
+            None
+        } else {
             return Err(self.error_here(format!(
                 "expected `{{` to begin the function body, found {}",
                 self.current_kind().describe()
             )));
+        };
+        if let Some(ellipsis) = ellipsis {
+            if !foreign {
+                return Err(self.error_at(
+                    ellipsis,
+                    "`...` is only allowed in an `@extern` function signature",
+                ));
+            }
+            if body.is_some() {
+                return Err(self.error_at(
+                    ellipsis,
+                    "an `@extern` function with a body cannot be variadic",
+                ));
+            }
         }
-        let body = self.parse_block()?;
-        let span = start.to(body.span);
+        let end = body.as_ref().map_or(self.previous_span(), |body| body.span);
         Ok(Declaration {
             attributes,
             kind: DeclarationKind::Function(Function {
                 name: identifier_name(name),
                 parameters,
+                variadic: ellipsis.is_some(),
                 result,
                 body,
             }),
-            span,
+            span: start.to(end),
         })
     }
 
-    fn parse_parameters(&mut self) -> Parse<Vec<Parameter>> {
+    fn parse_parameters(&mut self) -> Parse<(Vec<Parameter>, Option<Span>)> {
         let mut parameters = Vec::new();
+        let mut ellipsis = None;
         self.skip_newlines();
         while !self.check(&TokenKind::RightParenthesis) {
+            if self.check(&TokenKind::Ellipsis) {
+                ellipsis = Some(self.advance().span);
+                self.skip_newlines();
+                break;
+            }
             parameters.push(self.parse_parameter()?);
             self.skip_newlines();
             if !self.eat(&TokenKind::Comma) {
@@ -682,8 +720,13 @@ impl Parser {
             }
             self.skip_newlines();
         }
-        self.expect(&TokenKind::RightParenthesis, "`)` after the parameters")?;
-        Ok(parameters)
+        let closing = if ellipsis.is_some() {
+            "`)` after `...`"
+        } else {
+            "`)` after the parameters"
+        };
+        self.expect(&TokenKind::RightParenthesis, closing)?;
+        Ok((parameters, ellipsis))
     }
 
     fn parse_parameter(&mut self) -> Parse<Parameter> {

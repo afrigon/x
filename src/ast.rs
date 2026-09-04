@@ -29,8 +29,9 @@ pub enum DeclarationKind {
 pub struct Function {
     pub name: String,
     pub parameters: Vec<Parameter>,
+    pub variadic: bool,
     pub result: Option<Type>,
-    pub body: Expression,
+    pub body: Option<Expression>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -185,10 +186,16 @@ impl fmt::Display for Function {
         for parameter in &self.parameters {
             write!(formatter, " {parameter}")?;
         }
+        if self.variadic {
+            write!(formatter, " ...")?;
+        }
         if let Some(result) = &self.result {
             write!(formatter, " -> {result}")?;
         }
-        write!(formatter, " {})", self.body)
+        if let Some(body) = &self.body {
+            write!(formatter, " {body}")?;
+        }
+        write!(formatter, ")")
     }
 }
 
