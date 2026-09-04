@@ -1008,11 +1008,11 @@ Every other function has a compiler-chosen symbol that nothing outside the progr
 
 ### Variadic args
 
-`...` in extern function signatures: `fun printf(_ format: *u8, ...) -> i32`.
+`...` in extern function signatures: `fun printf(_ format: *u8, ...) -> i32`. It is only allowed on a body-less `@extern` declaration, where C reads the extra arguments through `va_list`. An `@extern` function written in `x` cannot be variadic, since `x` has no way to read a `va_list`, and no function without `@extern` accepts `...`. `x` has no native variadic form (see Open decisions).
 
 ### Function pointer types
 
-First-class type: `fun(T...) -> R`. Usable directly as a value type for callbacks.
+First-class type: `fun(A, B) -> R`. Usable directly as a value type for callbacks. A pointer to a variadic C function keeps the `...` in its type: `fun(*u8, ...) -> i32`.
 
 ### String boundary
 
@@ -1370,3 +1370,4 @@ These are explicitly unsettled.
 | **Stdlib design** | Whole subject, post-language-design |
 | **`@bindings` header macro** | Deferred (see Header-binding macro); needs `@` → `#` re-classification alongside user-definable macros |
 | **Symbol mangling** | Scheme for compiler-chosen function symbols; module-qualified once modules exist |
+| **Native variadic functions** | Whether `x` functions get a variadic form; candidate is Swift's array-sugar model, unrelated to the FFI `...` |
