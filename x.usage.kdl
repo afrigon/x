@@ -6,7 +6,27 @@ unknown_flags error
 subcommand_required #true
 flag "-h --help" help="Print help" action=help builtin=#true
 flag "-V --version" help="Print version" action=version builtin=#true
-cmd lex help="Lex a source file and print the resulting token stream" {
+cmd build help="Compile a source file" {
+    flag "-o --output" help="Where to write the output; requires a single --emit kind" {
+        arg <OUTPUT>
+    }
+    flag --emit help="What to produce, repeatable; defaults to executable" var=#true {
+        arg <EMIT> {
+            choices {
+                choice tokens help="The token stream"
+                choice ast help="The abstract syntax tree"
+                choice llvm-ir help="Textual LLVM IR"
+                choice assembly help="Native assembly"
+                choice object help="A native object file"
+                choice executable help="A linked executable"
+            }
+        }
+    }
+    flag --save-temps help="Keep the intermediate .ll and .o files"
+    flag "-h --help" help="Print help" action=help builtin=#true
+    arg <FILE> help="Path to the .x source file"
+}
+cmd run help="Compile a source file and run the result" {
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <FILE> help="Path to the .x source file"
 }

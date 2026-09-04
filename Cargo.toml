@@ -4,4 +4,9 @@ version = "0.0.1"
 edition = "2024"
 
 [dependencies]
+tempfile = "3.27.0"
 usage = { version = "6.6.1", package = "usage-rs" }
+
+[dev-dependencies]
+libtest-mimic = "0.8.2"
+similar = "3.2.0"
