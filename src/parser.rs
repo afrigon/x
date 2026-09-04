@@ -1,6 +1,7 @@
 use crate::ast::{
-    Argument, AssignmentOperator, BinaryOperator, Declaration, Expression, ExpressionKind,
-    Precedence, Program, Statement, StatementKind, Type, TypeKind, UnaryOperator,
+    Argument, AssignmentOperator, BinaryOperator, Declaration, DeclarationKind, Expression,
+    ExpressionKind, Function, Parameter, Precedence, Program, Statement, StatementKind, Type,
+    TypeKind, UnaryOperator,
 };
 use crate::token::{Span, Token, TokenKind};
 use std::fmt;
@@ -74,6 +75,13 @@ pub fn parse_type(tokens: Vec<Token>) -> Parse<Type> {
         )));
     }
     Ok(parsed)
+}
+
+fn identifier_name(token: Token) -> String {
+    let TokenKind::Identifier(name) = token.kind else {
+        unreachable!("only identifier tokens are passed here")
+    };
+    name
 }
 
 pub struct Parser {
@@ -586,10 +594,92 @@ impl Parser {
     }
 
     fn parse_declaration(&mut self) -> Parse<Declaration> {
-        Err(self.error_here(format!(
-            "expected a declaration, found {}",
-            self.current_kind().describe()
-        )))
+        match self.current_kind() {
+            TokenKind::Fun => self.parse_function(),
+            other => Err(self.error_here(format!(
+                "expected a declaration, found {}",
+                other.describe()
+            ))),
+        }
+    }
+
+    fn parse_function(&mut self) -> Parse<Declaration> {
+        let start = self.advance();
+        let name = self.expect_identifier("a function name")?;
+        self.expect(&TokenKind::LeftParenthesis, "`(` after the function name")?;
+        let parameters = self.parse_parameters()?;
+        let result = if self.eat(&TokenKind::Arrow) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        if !self.check(&TokenKind::LeftBrace) {
+            return Err(self.error_here(format!(
+                "expected `{{` to begin the function body, found {}",
+                self.current_kind().describe()
+            )));
+        }
+        let body = self.parse_block()?;
+        let span = start.span.to(body.span);
+        Ok(Declaration {
+            kind: DeclarationKind::Function(Function {
+                name: identifier_name(name),
+                parameters,
+                result,
+                body,
+            }),
+            span,
+        })
+    }
+
+    fn parse_parameters(&mut self) -> Parse<Vec<Parameter>> {
+        let mut parameters = Vec::new();
+        self.skip_newlines();
+        while !self.check(&TokenKind::RightParenthesis) {
+            parameters.push(self.parse_parameter()?);
+            self.skip_newlines();
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+            self.skip_newlines();
+        }
+        self.expect(&TokenKind::RightParenthesis, "`)` after the parameters")?;
+        Ok(parameters)
+    }
+
+    fn parse_parameter(&mut self) -> Parse<Parameter> {
+        let first = self.expect_identifier("a parameter name")?;
+        let start = first.span;
+        let first = identifier_name(first);
+        let (label, name) = if matches!(self.current_kind(), TokenKind::Identifier(_)) {
+            let internal = identifier_name(self.advance());
+            let label = if first == "_" { None } else { Some(first) };
+            (label, internal)
+        } else if first == "_" {
+            return Err(self.error_here(format!(
+                "expected a parameter name after `_`, found {}",
+                self.current_kind().describe()
+            )));
+        } else {
+            (Some(first.clone()), first)
+        };
+        self.expect(&TokenKind::Colon, "`:` and a parameter type")?;
+        let annotation = self.parse_type()?;
+        let default = if self.eat(&TokenKind::ColonEqual) {
+            Some(self.parse_binary(0)?)
+        } else {
+            None
+        };
+        let end = default
+            .as_ref()
+            .map_or(annotation.span, |default| default.span);
+        Ok(Parameter {
+            label,
+            name,
+            annotation,
+            default,
+            span: start.to(end),
+        })
     }
 
     fn parse_block(&mut self) -> Parse<Expression> {

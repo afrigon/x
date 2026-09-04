@@ -4,7 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::ast::Program;
-use crate::backend::llvm;
+use crate::backend::llvm::{self, EmitError};
 use crate::lexer::{self, LexError};
 use crate::parser::{self, ParseError};
 use crate::token::Token;
@@ -54,6 +54,7 @@ pub enum BuildError {
     AmbiguousOutput,
     Lex(Vec<LexError>),
     Parse(ParseError),
+    Emit(EmitError),
     Toolchain(ToolchainError),
 }
 
@@ -79,6 +80,7 @@ impl fmt::Display for BuildError {
                 Ok(())
             }
             BuildError::Parse(error) => write!(formatter, "{error}"),
+            BuildError::Emit(error) => write!(formatter, "{error}"),
             BuildError::Toolchain(error) => write!(formatter, "{error}"),
         }
     }
@@ -140,7 +142,7 @@ impl Artifact {
             }
             Artifact::Program(program) => {
                 let path = outputs.path(Emit::LlvmIr);
-                write(&path, &llvm::emit(&program))?;
+                write(&path, &llvm::emit(&program).map_err(BuildError::Emit)?)?;
                 Artifact::LlvmIr(path)
             }
             Artifact::LlvmIr(ir) => {

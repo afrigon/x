@@ -13,7 +13,26 @@ pub struct Declaration {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum DeclarationKind {}
+pub enum DeclarationKind {
+    Function(Function),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Function {
+    pub name: String,
+    pub parameters: Vec<Parameter>,
+    pub result: Option<Type>,
+    pub body: Expression,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Parameter {
+    pub label: Option<String>,
+    pub name: String,
+    pub annotation: Type,
+    pub default: Option<Expression>,
+    pub span: Span,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Expression {
@@ -123,8 +142,39 @@ impl fmt::Display for Program {
 }
 
 impl fmt::Display for Declaration {
-    fn fmt(&self, _formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.kind {}
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            DeclarationKind::Function(function) => write!(formatter, "{function}"),
+        }
+    }
+}
+
+impl fmt::Display for Function {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "(fun {}", self.name)?;
+        for parameter in &self.parameters {
+            write!(formatter, " {parameter}")?;
+        }
+        if let Some(result) = &self.result {
+            write!(formatter, " -> {result}")?;
+        }
+        write!(formatter, " {})", self.body)
+    }
+}
+
+impl fmt::Display for Parameter {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "(")?;
+        match &self.label {
+            None => write!(formatter, "_ ")?,
+            Some(label) if *label != self.name => write!(formatter, "{label} ")?,
+            Some(_) => {}
+        }
+        write!(formatter, "{}: {}", self.name, self.annotation)?;
+        if let Some(default) = &self.default {
+            write!(formatter, " := {default}")?;
+        }
+        write!(formatter, ")")
     }
 }
 
