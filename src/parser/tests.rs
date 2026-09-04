@@ -449,3 +449,53 @@ fn attribute_without_declaration_is_an_error() {
 fn attribute_needs_a_name() {
     assert!(program_error("@(.c) fun f() {}").starts_with("expected an attribute name after `@`"));
 }
+
+#[test]
+fn extern_declaration_without_body() {
+    assert_eq!(
+        s_program("@extern(.c)\nfun printf(_ format: *u8, ...) -> i32\n"),
+        "(@extern .c) (fun printf (_ format: *u8) ... -> i32)\n"
+    );
+    assert_eq!(
+        s_program("@extern(.c)\nfun abort()\nfun main() {}\n"),
+        "(@extern .c) (fun abort)\n(fun main (block))\n"
+    );
+}
+
+#[test]
+fn extern_definition_is_exported() {
+    assert_eq!(
+        s_program("@extern(.c, symbol: \"_start\")\nfun start() { kernelMain() }"),
+        "(@extern .c symbol: \"_start\") (fun start (block => (call kernelMain)))\n"
+    );
+}
+
+#[test]
+fn ellipsis_outside_extern_is_an_error() {
+    assert!(
+        program_error("fun log(_ format: *u8, ...) {}")
+            .starts_with("`...` is only allowed in an `@extern` function signature")
+    );
+}
+
+#[test]
+fn ellipsis_with_body_is_an_error() {
+    assert!(
+        program_error("@extern(.c)\nfun log(_ format: *u8, ...) {}")
+            .starts_with("an `@extern` function with a body cannot be variadic")
+    );
+}
+
+#[test]
+fn ellipsis_must_be_last() {
+    assert!(
+        program_error("@extern(.c)\nfun f(..., _ a: i32)").starts_with("expected `)` after `...`")
+    );
+}
+
+#[test]
+fn body_is_required_without_extern() {
+    assert!(
+        program_error("fun f() -> i32\n").starts_with("expected `{` to begin the function body")
+    );
+}
