@@ -5,6 +5,7 @@ lockfile = true
 rust = "1.98"
 clang = "23.1"
 "conda:llvm-tools" = "23.1"
+usage = "6.6.1"
 
 [tasks.build]
 description = "Build the compiler"
@@ -17,3 +18,7 @@ run = "cargo run --"
 [tasks.test]
 description = "Run the test suite"
 run = "cargo test"
+
+[tasks.spec]
+description = "Regenerate and lint the CLI spec"
+run = ["cargo run --quiet -- __usage_spec__ > x.usage.kdl", "usage lint x.usage.kdl"]

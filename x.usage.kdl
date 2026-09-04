@@ -1,0 +1,12 @@
+name x
+bin x
+version "0.0.1"
+about "The x language bootstrap compiler"
+unknown_flags error
+subcommand_required #true
+flag "-h --help" help="Print help" action=help builtin=#true
+flag "-V --version" help="Print version" action=version builtin=#true
+cmd lex help="Lex a source file and print the resulting token stream" {
+    flag "-h --help" help="Print help" action=help builtin=#true
+    arg <FILE> help="Path to the .x source file"
+}

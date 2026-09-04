@@ -2,24 +2,31 @@ mod ast;
 mod lexer;
 mod parser;
 mod token;
+#[cfg(test)]
+mod tests;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use usage::{Cli, Subcommands};
 
-#[derive(Parser)]
-#[command(name = "x", version, about = "The x language bootstrap compiler")]
+#[derive(Cli)]
+#[usage(
+    bin = "x",
+    version,
+    about = "The x language bootstrap compiler",
+    unknown_flags = "error"
+)]
 struct Cli {
-    #[command(subcommand)]
+    #[usage(subcommand)]
     command: Command,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommands)]
 enum Command {
-    #[command(about = "Lex a source file and print the resulting token stream")]
+    #[usage(help = "Lex a source file and print the resulting token stream")]
     Lex {
-        #[arg(help = "Path to the .x source file")]
+        #[usage(help = "Path to the .x source file")]
         file: PathBuf,
     },
 }
