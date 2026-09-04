@@ -20,4 +20,4 @@ mise run x -- run path/to/file.x
 
 `build` accepts `--emit <kind>` to stop at an intermediate form (`tokens`, `ast`, `llvm-ir`, `assembly`, `object`) and `--save-temps` to keep the `.ll` and `.o` files.
 
-End-to-end programs live under `tests/programs/`: each `.x` file is compiled and run, its stdout compared with a sibling `.stdout` file and its exit code with an `//@ exit-code: N` directive at the top of the source. `X_BLESS=1 mise run test` rewrites the `.stdout` files from actual output.
+End-to-end programs live under `tests/programs/`: each `.x` file is compiled and run, its stdout and stderr compared with sibling `.stdout` and `.stderr` snapshots and its exit code with an `//@ exit-code: N` directive at the top of the source. A missing snapshot means empty output. `X_RECORD_SNAPSHOTS=1 mise run test` rewrites the snapshots from actual output.

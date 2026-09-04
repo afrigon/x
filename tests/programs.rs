@@ -8,7 +8,7 @@ use similar::TextDiff;
 
 const COMPILER: &str = env!("CARGO_BIN_EXE_x");
 const REQUIRED_TOOLS: [&str; 2] = ["llc", "clang"];
-const BLESS_VARIABLE: &str = "X_BLESS";
+const RECORD_VARIABLE: &str = "X_RECORD_SNAPSHOTS";
 
 fn main() {
     let arguments = Arguments::from_args();
@@ -57,6 +57,7 @@ fn is_available(tool: &str) -> bool {
 
 struct Expectation {
     stdout: String,
+    stderr: String,
     exit_code: i32,
 }
 
@@ -80,12 +81,19 @@ fn expectation(program: &Path) -> Result<Expectation, Failed> {
             other => return Err(format!("unknown directive: {other}").into()),
         }
     }
-    let stdout = match fs::read_to_string(program.with_extension("stdout")) {
-        Ok(stdout) => stdout,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(error.into()),
-    };
-    Ok(Expectation { stdout, exit_code })
+    Ok(Expectation {
+        stdout: snapshot(&program.with_extension("stdout"))?,
+        stderr: snapshot(&program.with_extension("stderr"))?,
+        exit_code,
+    })
+}
+
+fn snapshot(path: &Path) -> Result<String, Failed> {
+    match fs::read_to_string(path) {
+        Ok(contents) => Ok(contents),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn check(program: &Path) -> Result<(), Failed> {
@@ -109,23 +117,24 @@ fn check(program: &Path) -> Result<(), Failed> {
 
     let output = Command::new(&executable).output()?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let exit_code = output
         .status
         .code()
         .ok_or("program terminated by a signal")?;
 
-    if std::env::var_os(BLESS_VARIABLE).is_some() {
-        bless(program, &stdout)?;
+    if std::env::var_os(RECORD_VARIABLE).is_some() {
+        record(&program.with_extension("stdout"), &stdout)?;
+        record(&program.with_extension("stderr"), &stderr)?;
         return Ok(());
     }
 
     let mut failures = Vec::new();
-    if stdout != expected.stdout {
-        let diff = TextDiff::from_lines(&expected.stdout, &stdout);
-        failures.push(format!(
-            "stdout differs:\n{}",
-            diff.unified_diff().header("expected", "actual")
-        ));
+    if let Some(diff) = difference("stdout", &expected.stdout, &stdout) {
+        failures.push(diff);
+    }
+    if let Some(diff) = difference("stderr", &expected.stderr, &stderr) {
+        failures.push(diff);
     }
     if exit_code != expected.exit_code {
         failures.push(format!(
@@ -140,15 +149,25 @@ fn check(program: &Path) -> Result<(), Failed> {
     }
 }
 
-fn bless(program: &Path, stdout: &str) -> Result<(), Failed> {
-    let path = program.with_extension("stdout");
-    if stdout.is_empty() {
-        match fs::remove_file(&path) {
+fn difference(stream: &str, expected: &str, actual: &str) -> Option<String> {
+    if expected == actual {
+        return None;
+    }
+    let diff = TextDiff::from_lines(expected, actual);
+    Some(format!(
+        "{stream} differs:\n{}",
+        diff.unified_diff().header("expected", "actual")
+    ))
+}
+
+fn record(path: &Path, contents: &str) -> Result<(), Failed> {
+    if contents.is_empty() {
+        match fs::remove_file(path) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error.into()),
         }
     } else {
-        Ok(fs::write(&path, stdout)?)
+        Ok(fs::write(path, contents)?)
     }
 }
