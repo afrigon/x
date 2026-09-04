@@ -11,15 +11,30 @@ pub enum EmitError {
     Unsupported { what: &'static str, span: Span },
 }
 
+impl EmitError {
+    pub fn span(&self) -> Span {
+        match self {
+            EmitError::Unsupported { span, .. } => *span,
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            EmitError::Unsupported { what, .. } => format!("cannot lower {what}"),
+        }
+    }
+}
+
 impl fmt::Display for EmitError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EmitError::Unsupported { what, span } => write!(
-                formatter,
-                "line {}, column {}: cannot lower {what}",
-                span.line, span.column
-            ),
-        }
+        let span = self.span();
+        write!(
+            formatter,
+            "line {}, column {}: {}",
+            span.line,
+            span.column,
+            self.message()
+        )
     }
 }
 

@@ -43,15 +43,19 @@ pub struct Parameter {
     pub span: Span,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ExpressionId(pub u32);
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Expression {
+    pub id: ExpressionId,
     pub kind: ExpressionKind,
     pub span: Span,
 }
 
 impl Expression {
-    pub fn new(kind: ExpressionKind, span: Span) -> Self {
-        Expression { kind, span }
+    pub fn new(id: ExpressionId, kind: ExpressionKind, span: Span) -> Self {
+        Expression { id, kind, span }
     }
 }
 

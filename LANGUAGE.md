@@ -199,8 +199,29 @@ fun main() {
 - `main` takes no parameters. Command-line arguments are read through the standard library, so the caller chooses the allocator that holds them.
 - `fun main()` exits the process with status 0 when the body completes.
 - `main` may instead return a `Result` whose success type is unit and whose error type is `Displayable`. Returning `err` prints the error to stderr and exits with status 1. The spelling of that return type follows the unit-type decision (see Open decisions).
-- The compiler generates the platform entry point (the C `main`) only when the program declares `fun main`. A program without one — a kernel, a bootloader payload — exports its own entry through `@extern` (see FFI), and no runtime entry is generated.
+- The compiler generates the platform entry point (the C `main`) for hosted targets, where `main` is always present: declared by the program, or implied by a script (see Scripts). A freestanding target — a kernel, a bootloader payload — generates none; the program exports its own entry through `@extern` (see FFI). How a package selects a freestanding target belongs to the manifest.
 - A program declares at most one `main`, and user code cannot call it.
+
+### Scripts
+
+A script is a single `.x` file compiled without a manifest, which is what `x build file.x` and `x run file.x` do. A package is compiled from its manifest (see Modules and visibility).
+
+```
+// script.x
+@extern(.c)
+fun printf(_ format: *u8, ...) -> i32
+
+let greeting := c"hello\n"
+unsafe {
+    printf(greeting)
+}
+```
+
+- A script is the only place top-level statements are allowed. In source order they form the body of an implicit `fun main()`. Declarations in the script stay top-level and are visible to that body, exactly as in a package.
+- Top-level `let` bindings in a script are locals of the implicit `main`, not globals, so functions declared in the script cannot see them. Nothing downstream of the parser knows the program was a script.
+- A script may declare `fun main` explicitly instead. Declaring it and also writing top-level statements is an error.
+- An empty file is a script with no statements: it gets an empty `main` and exits with status 0.
+- An executable package must declare `fun main`. A file in a package with top-level statements is an error.
 
 ### Closures
 
@@ -852,8 +873,9 @@ Other collections (`HashMap<K, V>`, `Set<T>`, etc.) live in the stdlib.
 
 ## Modules and visibility
 
-- **No `module` keyword.** Modules are defined by **manifest + directory** (format open, see Open decisions).
-- Files within a module share visibility freely.
+- **No `module` keyword.** A package is one module: a manifest written in KDL (layout and fields open, see Open decisions) and the `.x` files under its source directory, compiled as one unit.
+- Every file in a package sees every other without importing it. `import` exists only for dependency packages, by manifest name.
+- Analyzing a declaration depends only on the declarations it names, never on the whole file or package, so the compiler can rebuild at declaration granularity (see the incremental compilation decision in the compiler repository).
 - **Default visibility is public** (exported across module boundaries).
 - `private` is the only restriction modifier (scope open, see Open decisions — file vs module).
 - `import name` brings non-private items into scope.
@@ -1358,7 +1380,7 @@ These are explicitly unsettled.
 | **Associated-type ergonomics** | **Locked in spirit** (protocols carry `<T>` slots, no `T.Item` accessor, bind explicitly at use). **Needs revision** — use-site syntax (`<I: Iterator<T>, T>`), constraint shorthand, slot defaults, and behavior in multi-bound contexts all need another pass. |
 | **Numeric cast `as`** | Widening/narrowing/checked semantics, overflow behavior |
 | **Async / concurrency** | Deferred |
-| **Module manifest** | Format, directory layout, dependency declaration |
+| **Module manifest** | Format is KDL; directory layout, fields, dependency declaration, and freestanding target selection open |
 | **Visibility scope** | `private` = file or module; type-level field visibility |
 | **Range syntax** | `..`, `..=`, step? |
 | **`Hashable` signature** | May evolve from `hashValue() -> u64` to streaming `hash(into: Hasher)` |
@@ -1370,4 +1392,5 @@ These are explicitly unsettled.
 | **Stdlib design** | Whole subject, post-language-design |
 | **`@bindings` header macro** | Deferred (see Header-binding macro); needs `@` → `#` re-classification alongside user-definable macros |
 | **Symbol mangling** | Scheme for compiler-chosen function symbols; module-qualified once modules exist |
+| **Shadowing** | Whether a `let` may reuse a name from the same scope or an enclosing one; the checker rejects the same scope and allows inner scopes until decided |
 | **Native variadic functions** | Whether `x` functions get a variadic form; candidate is Swift's array-sugar model, unrelated to the FFI `...` |

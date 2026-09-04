@@ -17,6 +17,7 @@ fn main() {
     let trials = programs(&root)
         .into_iter()
         .map(|program| {
+            let root = root.clone();
             let name = program
                 .strip_prefix(&root)
                 .expect("program lives under the root")
@@ -27,7 +28,7 @@ fn main() {
                 Some(tool) => Ok(Completion::ignored_with(format!(
                     "{tool} not found in PATH"
                 ))),
-                None => check(&program).map(|()| Completion::Completed),
+                None => check(&root, &program).map(|()| Completion::Completed),
             })
         })
         .collect();
@@ -56,6 +57,7 @@ fn is_available(tool: &str) -> bool {
 }
 
 struct Expectation {
+    compile_fail: bool,
     stdout: String,
     stderr: String,
     exit_code: i32,
@@ -64,24 +66,27 @@ struct Expectation {
 fn expectation(program: &Path) -> Result<Expectation, Failed> {
     let source = fs::read_to_string(program)?;
     let mut exit_code = 0;
+    let mut compile_fail = false;
     for line in source.lines() {
         let Some(directive) = line.strip_prefix("//@") else {
             break;
         };
-        let (key, value) = directive
-            .split_once(':')
-            .ok_or_else(|| format!("malformed directive: {line}"))?;
-        match key.trim() {
-            "exit-code" => {
+        let (key, value) = match directive.split_once(':') {
+            Some((key, value)) => (key.trim(), Some(value.trim())),
+            None => (directive.trim(), None),
+        };
+        match (key, value) {
+            ("compile-fail", None) => compile_fail = true,
+            ("exit-code", Some(value)) => {
                 exit_code = value
-                    .trim()
                     .parse()
                     .map_err(|_| format!("exit-code is not an integer: {line}"))?
             }
-            other => return Err(format!("unknown directive: {other}").into()),
+            _ => return Err(format!("unknown directive: {line}").into()),
         }
     }
     Ok(Expectation {
+        compile_fail,
         stdout: snapshot(&program.with_extension("stdout"))?,
         stderr: snapshot(&program.with_extension("stderr"))?,
         exit_code,
@@ -96,23 +101,38 @@ fn snapshot(path: &Path) -> Result<String, Failed> {
     }
 }
 
-fn check(program: &Path) -> Result<(), Failed> {
+fn check(root: &Path, program: &Path) -> Result<(), Failed> {
     let expected = expectation(program)?;
     let directory = tempfile::tempdir()?;
     let executable = directory.path().join("program");
+    let relative = program
+        .strip_prefix(root)
+        .expect("program lives under the root");
+    let record = std::env::var_os(RECORD_VARIABLE).is_some();
 
     let build = Command::new(COMPILER)
+        .current_dir(root)
         .arg("build")
-        .arg(program)
+        .arg(relative)
         .arg("-o")
         .arg(&executable)
         .output()?;
+    let build_stderr = String::from_utf8_lossy(&build.stderr).into_owned();
+
+    if expected.compile_fail {
+        if build.status.success() {
+            return Err("expected compilation to fail, but it succeeded".into());
+        }
+        if record {
+            return record_snapshot(&program.with_extension("stderr"), &build_stderr);
+        }
+        return match difference("compiler stderr", &expected.stderr, &build_stderr) {
+            Some(diff) => Err(diff.into()),
+            None => Ok(()),
+        };
+    }
     if !build.status.success() {
-        return Err(format!(
-            "compilation failed:\n{}",
-            String::from_utf8_lossy(&build.stderr)
-        )
-        .into());
+        return Err(format!("compilation failed:\n{build_stderr}").into());
     }
 
     let output = Command::new(&executable).output()?;
@@ -123,9 +143,9 @@ fn check(program: &Path) -> Result<(), Failed> {
         .code()
         .ok_or("program terminated by a signal")?;
 
-    if std::env::var_os(RECORD_VARIABLE).is_some() {
-        record(&program.with_extension("stdout"), &stdout)?;
-        record(&program.with_extension("stderr"), &stderr)?;
+    if record {
+        record_snapshot(&program.with_extension("stdout"), &stdout)?;
+        record_snapshot(&program.with_extension("stderr"), &stderr)?;
         return Ok(());
     }
 
@@ -160,7 +180,7 @@ fn difference(stream: &str, expected: &str, actual: &str) -> Option<String> {
     ))
 }
 
-fn record(path: &Path, contents: &str) -> Result<(), Failed> {
+fn record_snapshot(path: &Path, contents: &str) -> Result<(), Failed> {
     if contents.is_empty() {
         match fs::remove_file(path) {
             Ok(()) => Ok(()),

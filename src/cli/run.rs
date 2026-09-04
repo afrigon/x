@@ -20,7 +20,9 @@ impl Run for RunCommand {
         let directory = match tempfile::tempdir() {
             Ok(directory) => directory,
             Err(error) => {
-                return super::report(format_args!("cannot create a temporary directory: {error}"));
+                return super::report(format_args!(
+                    "error: cannot create a temporary directory: {error}"
+                ));
             }
         };
         let name = self.file.with_extension("");
@@ -41,7 +43,7 @@ impl Run for RunCommand {
         match run::run(&RunArguments { executable }) {
             Ok(status) => match status.code() {
                 Some(code) => ExitCode::from(code as u8),
-                None => super::report("program terminated by a signal"),
+                None => super::report("error: program terminated by a signal"),
             },
             Err(error) => super::report(error),
         }

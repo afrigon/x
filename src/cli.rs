@@ -32,6 +32,6 @@ pub enum Command {
 }
 
 fn report(error: impl Display) -> ExitCode {
-    eprintln!("error: {error}");
+    eprintln!("{error}");
     ExitCode::FAILURE
 }

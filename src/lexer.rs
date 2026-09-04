@@ -26,10 +26,10 @@ pub enum LexErrorKind {
     MissingDigits,
 }
 
-impl fmt::Display for LexError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl LexError {
+    pub fn message(&self) -> String {
         use LexErrorKind::*;
-        let message = match &self.kind {
+        match &self.kind {
             UnexpectedCharacter(c) => format!("unexpected character {c:?}"),
             UnterminatedString => "unterminated string literal".to_string(),
             UnterminatedCharacter => "unterminated character literal".to_string(),
@@ -47,11 +47,18 @@ impl fmt::Display for LexError {
             InvalidUnicodeEscape => "invalid unicode escape".to_string(),
             IntegerOverflow => "integer literal is too large".to_string(),
             MissingDigits => "numeric literal is missing digits".to_string(),
-        };
+        }
+    }
+}
+
+impl fmt::Display for LexError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "line {}, column {}: {}",
-            self.span.line, self.span.column, message
+            self.span.line,
+            self.span.column,
+            self.message()
         )
     }
 }

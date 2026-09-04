@@ -1,0 +1,1 @@
+compile-fail/unsafe_call.x:6:5: error: `printf` is `@extern`, so calling it requires an `unsafe` block
