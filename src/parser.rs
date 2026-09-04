@@ -1,6 +1,6 @@
 use crate::ast::{
-    Argument, AssignmentOperator, BinaryOperator, Expression, ExpressionKind, Precedence,
-    Statement, StatementKind, Type, TypeKind, UnaryOperator,
+    Argument, AssignmentOperator, BinaryOperator, Declaration, Expression, ExpressionKind,
+    Precedence, Program, Statement, StatementKind, Type, TypeKind, UnaryOperator,
 };
 use crate::token::{Span, Token, TokenKind};
 use std::fmt;
@@ -22,6 +22,17 @@ impl fmt::Display for ParseError {
 }
 
 type Parse<T> = Result<T, ParseError>;
+
+pub fn parse_program(tokens: Vec<Token>) -> Parse<Program> {
+    let mut parser = Parser::new(tokens);
+    let mut declarations = Vec::new();
+    parser.skip_newlines();
+    while !parser.at_end() {
+        declarations.push(parser.parse_declaration()?);
+        parser.skip_newlines();
+    }
+    Ok(Program { declarations })
+}
 
 pub fn parse_expression(tokens: Vec<Token>) -> Parse<Expression> {
     let mut parser = Parser::new(tokens);
@@ -572,6 +583,13 @@ impl Parser {
             },
             span,
         ))
+    }
+
+    fn parse_declaration(&mut self) -> Parse<Declaration> {
+        Err(self.error_here(format!(
+            "expected a declaration, found {}",
+            self.current_kind().describe()
+        )))
     }
 
     fn parse_block(&mut self) -> Parse<Expression> {
