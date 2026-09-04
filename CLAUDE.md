@@ -11,6 +11,7 @@
 
 - `LANGUAGE.md` — the authoritative language design: syntax, type system, semantics, naming conventions, and the Open decisions table. Every question about what `x` looks like is answered here and nowhere else.
 - The GitHub project [x-roadmap](https://github.com/users/afrigon/projects/6) holds the roadmap: milestones with their exit criteria, issues with acceptance criteria, and the project README with vision and risks.
+- `GRAMMAR.md` — the EBNF grammar of every decided construct, with the side conditions the parser enforces beside the productions. A syntax change lands in `LANGUAGE.md` and `GRAMMAR.md` together.
 - `README.md` — install and development commands.
 - `x.usage.kdl` — the compiler's command-line interface, emitted from `src/main.rs` by `mise run spec` and kept in sync by a test.
 
@@ -33,6 +34,7 @@
 | **Architecture** | One frontend → shared typed IR → pluggable backends | LLVM AOT is the only backend until self-hosting; JIT and bytecode VM come after, written in `x`. |
 | **Scope strategy** | Minimal compiler-complete subset first | Just enough language to write a compiler; grow features in `x` after self-hosting. If the bootstrap compiler can be written without a feature, the feature waits. |
 | **CLI definition** | [usage](https://usage.jdx.dev) derive macros in Rust, with the emitted spec committed as `x.usage.kdl` | The KDL spec is the language-neutral definition of the interface, which the self-hosted compiler implements against. usage parses from static tables built at compile time and adds no runtime dependency. |
+| **Incremental compilation** | Swift's model: per-file frontend jobs over a fine-grained dependency graph, so an edit rebuilds only the declarations that depend on it | Package-wide visibility without package-wide rebuilds. Built into the self-hosted compiler; the bootstrap compiles whole programs. |
 | **Dependencies** | LLVM only, for `x` itself | The bootstrap may use Cargo crates freely. Everything else is re-implemented in `x`. |
 | **Self-hosting strategy** | Stage-by-stage rewrite with cross-validation | Each stage is rewritten in `x` and validated against the Rust version before the next; both coexist during the transition. |
 
