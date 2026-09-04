@@ -8,7 +8,15 @@ pub struct Program {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Declaration {
+    pub attributes: Vec<Attribute>,
     pub kind: DeclarationKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Attribute {
+    pub name: String,
+    pub arguments: Vec<Argument>,
     pub span: Span,
 }
 
@@ -143,8 +151,30 @@ impl fmt::Display for Program {
 
 impl fmt::Display for Declaration {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for attribute in &self.attributes {
+            write!(formatter, "{attribute} ")?;
+        }
         match &self.kind {
             DeclarationKind::Function(function) => write!(formatter, "{function}"),
+        }
+    }
+}
+
+impl fmt::Display for Attribute {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "(@{}", self.name)?;
+        for argument in &self.arguments {
+            write!(formatter, " {argument}")?;
+        }
+        write!(formatter, ")")
+    }
+}
+
+impl fmt::Display for Argument {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.label {
+            Some(label) => write!(formatter, "{label}: {}", self.value),
+            None => write!(formatter, "{}", self.value),
         }
     }
 }
@@ -488,10 +518,7 @@ impl fmt::Display for Expression {
             Call { callee, arguments } => {
                 write!(formatter, "(call {callee}")?;
                 for argument in arguments {
-                    match &argument.label {
-                        Some(label) => write!(formatter, " {label}: {}", argument.value)?,
-                        None => write!(formatter, " {}", argument.value)?,
-                    }
+                    write!(formatter, " {argument}")?;
                 }
                 write!(formatter, ")")
             }
