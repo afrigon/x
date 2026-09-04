@@ -1,5 +1,11 @@
-use crate::ast::Expression;
+use crate::ast::{Expression, Program};
 use crate::lexer;
+
+fn parse_program(source: &str) -> Result<Program, String> {
+    let (tokens, errors) = lexer::tokenize(source);
+    assert!(errors.is_empty(), "lex errors: {errors:?}");
+    super::parse_program(tokens).map_err(|error| error.message)
+}
 
 fn parse(source: &str) -> Expression {
     let (tokens, errors) = lexer::tokenize(source);
@@ -312,5 +318,19 @@ fn parses_the_phase_one_main_body() {
     assert_eq!(
         block("{\n    unsafe {\n        printf(c\"hello, world\\n\")\n    }\n}"),
         "(block => (unsafe (block => (call printf c\"hello, world\\n\"))))",
+    );
+}
+
+#[test]
+fn empty_source_is_an_empty_program() {
+    assert_eq!(parse_program("").unwrap().declarations, []);
+    assert_eq!(parse_program("\n\n// nothing\n").unwrap().declarations, []);
+}
+
+#[test]
+fn a_statement_is_not_a_declaration() {
+    assert_eq!(
+        parse_program("let count = 1\n").unwrap_err(),
+        "expected a declaration, found let"
     );
 }

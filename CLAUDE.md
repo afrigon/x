@@ -83,3 +83,4 @@ A single frontend produces a typed IR; backends are pluggable. Only LLVM AOT exi
 
 - Full, descriptive names in code and in AST and type names alike: `Expression` not `Expr`, `declaration` not `decl`, `character` not `c`. Loop and tight-iteration variables may be short (`i`, `loop c in chars`). `src` and `dst` are accepted abbreviations.
 - Code samples in `LANGUAGE.md` follow the same naming rules as compiler code.
+- Unit tests live in a sibling `tests.rs` file declared with `#[cfg(test)] mod tests;`, never inline in the module they test.

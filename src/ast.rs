@@ -2,6 +2,20 @@ use crate::token::Span;
 use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Program {
+    pub declarations: Vec<Declaration>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Declaration {
+    pub kind: DeclarationKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeclarationKind {}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Expression {
     pub kind: ExpressionKind,
     pub span: Span,
@@ -97,6 +111,21 @@ pub enum TypeKind {
         variadic: bool,
         result: Option<Box<Type>>,
     },
+}
+
+impl fmt::Display for Program {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for declaration in &self.declarations {
+            writeln!(formatter, "{declaration}")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Declaration {
+    fn fmt(&self, _formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {}
+    }
 }
 
 impl fmt::Display for Type {

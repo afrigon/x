@@ -1,4 +1,4 @@
-use crate::Cli;
+use crate::cli::Cli;
 
 #[test]
 fn committed_spec_matches_emitted_spec() {
