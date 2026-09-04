@@ -1,7 +1,7 @@
 use crate::ast::{
     Argument, AssignmentOperator, Attribute, BinaryOperator, Declaration, DeclarationKind,
-    Expression, ExpressionKind, Function, Parameter, Precedence, Program, Statement, StatementKind,
-    Type, TypeKind, UnaryOperator,
+    Expression, ExpressionId, ExpressionKind, Function, Parameter, Precedence, Program, Statement,
+    StatementKind, Type, TypeKind, UnaryOperator,
 };
 use crate::token::{Span, Token, TokenKind};
 use std::fmt;
@@ -87,6 +87,7 @@ fn identifier_name(token: Token) -> String {
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
+    next_expression_id: u32,
 }
 
 impl Parser {
@@ -94,7 +95,14 @@ impl Parser {
         Parser {
             tokens,
             position: 0,
+            next_expression_id: 0,
         }
+    }
+
+    fn expression(&mut self, kind: ExpressionKind, span: Span) -> Expression {
+        let id = ExpressionId(self.next_expression_id);
+        self.next_expression_id += 1;
+        Expression::new(id, kind, span)
     }
 
     fn current(&self) -> &Token {
@@ -184,7 +192,7 @@ impl Parser {
             self.advance();
             let right = self.parse_binary(precedence + 1)?;
             let span = left.span.to(right.span);
-            left = Expression::new(
+            left = self.expression(
                 ExpressionKind::Binary {
                     operator,
                     left: Box::new(left),
@@ -218,7 +226,7 @@ impl Parser {
         self.advance();
         let operand = self.parse_unary()?;
         let span = start.to(operand.span);
-        Ok(Expression::new(
+        Ok(self.expression(
             ExpressionKind::Unary {
                 operator,
                 operand: Box::new(operand),
@@ -243,7 +251,7 @@ impl Parser {
     fn parse_call(&mut self, callee: Expression) -> Parse<Expression> {
         let (arguments, close) = self.parse_argument_list()?;
         let span = callee.span.to(close.span);
-        Ok(Expression::new(
+        Ok(self.expression(
             ExpressionKind::Call {
                 callee: Box::new(callee),
                 arguments,
@@ -299,7 +307,7 @@ impl Parser {
             unreachable!()
         };
         let span = receiver.span.to(name_token.span);
-        Ok(Expression::new(
+        Ok(self.expression(
             ExpressionKind::Field {
                 receiver: Box::new(receiver),
                 name,
@@ -315,7 +323,7 @@ impl Parser {
         self.skip_newlines();
         let close = self.expect(&TokenKind::RightBracket, "`]`")?;
         let span = receiver.span.to(close.span);
-        Ok(Expression::new(
+        Ok(self.expression(
             ExpressionKind::Index {
                 receiver: Box::new(receiver),
                 index: Box::new(index),
@@ -349,7 +357,7 @@ impl Parser {
             }
         };
         self.advance();
-        Ok(Expression::new(kind, token.span))
+        Ok(self.expression(kind, token.span))
     }
 
     fn parse_grouping(&mut self) -> Parse<Expression> {
@@ -369,7 +377,7 @@ impl Parser {
             unreachable!()
         };
         let span = dot.to(name_token.span);
-        Ok(Expression::new(ExpressionKind::ImplicitMember(name), span))
+        Ok(self.expression(ExpressionKind::ImplicitMember(name), span))
     }
 
     fn expect_identifier(&mut self, description: &str) -> Parse<Token> {
@@ -635,15 +643,25 @@ impl Parser {
 
     fn parse_attribute(&mut self) -> Parse<Attribute> {
         let at = self.advance();
-        let name = self.expect_identifier("an attribute name after `@`")?;
+        let name = match self.current_kind() {
+            TokenKind::Identifier(name) => name.clone(),
+            kind if kind.is_keyword() => kind.describe().to_string(),
+            other => {
+                return Err(self.error_here(format!(
+                    "expected an attribute name after `@`, found {}",
+                    other.describe()
+                )));
+            }
+        };
+        let name_span = self.advance().span;
         let (arguments, end) = if self.check(&TokenKind::LeftParenthesis) {
             let (arguments, close) = self.parse_argument_list()?;
             (arguments, close.span)
         } else {
-            (Vec::new(), name.span)
+            (Vec::new(), name_span)
         };
         Ok(Attribute {
-            name: identifier_name(name),
+            name,
             arguments,
             span: at.span.to(end),
         })
@@ -793,20 +811,14 @@ impl Parser {
         };
 
         let span = open.span.to(close.span);
-        Ok(Expression::new(
-            ExpressionKind::Block { statements, value },
-            span,
-        ))
+        Ok(self.expression(ExpressionKind::Block { statements, value }, span))
     }
 
     fn parse_unsafe(&mut self) -> Parse<Expression> {
         let start = self.advance();
         let block = self.parse_block()?;
         let span = start.span.to(block.span);
-        Ok(Expression::new(
-            ExpressionKind::Unsafe(Box::new(block)),
-            span,
-        ))
+        Ok(self.expression(ExpressionKind::Unsafe(Box::new(block)), span))
     }
 
     fn expect_statement_end(&mut self) -> Parse<()> {

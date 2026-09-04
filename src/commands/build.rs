@@ -5,10 +5,12 @@ use std::path::{Path, PathBuf};
 
 use crate::ast::Program;
 use crate::backend::llvm::{self, EmitError};
+use crate::diagnostic::Diagnostic;
 use crate::lexer::{self, LexError};
 use crate::parser::{self, ParseError};
-use crate::token::Token;
+use crate::token::{Span, Token};
 use crate::toolchain::{self, CodeFormat, ToolchainError};
+use crate::typecheck::{self, TypedProgram};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Emit {
@@ -49,12 +51,31 @@ pub struct BuildArguments {
 
 #[derive(Debug)]
 pub enum BuildError {
-    Read { path: PathBuf, error: io::Error },
-    Write { path: PathBuf, error: io::Error },
+    Read {
+        path: PathBuf,
+        error: io::Error,
+    },
+    Write {
+        path: PathBuf,
+        error: io::Error,
+    },
     AmbiguousOutput,
-    Lex(Vec<LexError>),
-    Parse(ParseError),
-    Emit(EmitError),
+    Lex {
+        path: PathBuf,
+        errors: Vec<LexError>,
+    },
+    Parse {
+        path: PathBuf,
+        error: ParseError,
+    },
+    Check {
+        path: PathBuf,
+        diagnostics: Vec<Diagnostic>,
+    },
+    Emit {
+        path: PathBuf,
+        error: EmitError,
+    },
     Toolchain(ToolchainError),
 }
 
@@ -62,28 +83,53 @@ impl fmt::Display for BuildError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BuildError::Read { path, error } => {
-                write!(formatter, "cannot read {}: {error}", path.display())
+                write!(formatter, "error: cannot read {}: {error}", path.display())
             }
             BuildError::Write { path, error } => {
-                write!(formatter, "cannot write {}: {error}", path.display())
+                write!(formatter, "error: cannot write {}: {error}", path.display())
             }
             BuildError::AmbiguousOutput => {
-                write!(formatter, "--output requires a single --emit kind")
+                write!(formatter, "error: --output requires a single --emit kind")
             }
-            BuildError::Lex(errors) => {
-                for (index, error) in errors.iter().enumerate() {
-                    if index > 0 {
-                        writeln!(formatter)?;
-                    }
-                    write!(formatter, "{error}")?;
-                }
-                Ok(())
+            BuildError::Lex { path, errors } => {
+                let lines = errors.iter().map(|error| (error.span, error.message()));
+                positioned(formatter, path, lines)
             }
-            BuildError::Parse(error) => write!(formatter, "{error}"),
-            BuildError::Emit(error) => write!(formatter, "{error}"),
-            BuildError::Toolchain(error) => write!(formatter, "{error}"),
+            BuildError::Parse { path, error } => {
+                positioned(formatter, path, [(error.span, error.message.clone())])
+            }
+            BuildError::Check { path, diagnostics } => {
+                let lines = diagnostics
+                    .iter()
+                    .map(|diagnostic| (diagnostic.span, diagnostic.message.clone()));
+                positioned(formatter, path, lines)
+            }
+            BuildError::Emit { path, error } => {
+                positioned(formatter, path, [(error.span(), error.message())])
+            }
+            BuildError::Toolchain(error) => write!(formatter, "error: {error}"),
         }
     }
+}
+
+fn positioned(
+    formatter: &mut fmt::Formatter<'_>,
+    path: &Path,
+    lines: impl IntoIterator<Item = (Span, String)>,
+) -> fmt::Result {
+    for (index, (span, message)) in lines.into_iter().enumerate() {
+        if index > 0 {
+            writeln!(formatter)?;
+        }
+        write!(
+            formatter,
+            "{}:{}:{}: error: {message}",
+            path.display(),
+            span.line,
+            span.column
+        )?;
+    }
+    Ok(())
 }
 
 impl From<ToolchainError> for BuildError {
@@ -93,16 +139,16 @@ impl From<ToolchainError> for BuildError {
 }
 
 pub fn build(arguments: &BuildArguments) -> Result<(), BuildError> {
-    let mut outputs = Outputs::new(arguments)?;
-    let last = outputs.furthest().artifact();
+    let mut context = BuildContext::new(arguments)?;
+    let last = context.furthest().artifact();
     let source = fs::read_to_string(&arguments.input).map_err(|error| BuildError::Read {
         path: arguments.input.clone(),
         error,
     })?;
     let mut artifact = Artifact::Source(source);
     while artifact.kind() != Some(last) {
-        artifact = artifact.advance(&outputs)?;
-        outputs.emit(&artifact)?;
+        artifact = artifact.advance(&context)?;
+        context.emit(&artifact)?;
     }
     Ok(())
 }
@@ -111,9 +157,10 @@ enum Artifact {
     Source(String),
     Tokens(Vec<Token>),
     Program(Program),
+    Typed(TypedProgram),
     LlvmIr(PathBuf),
     Object(PathBuf),
-    Executable(PathBuf),
+    Executable,
 }
 
 impl Artifact {
@@ -122,45 +169,66 @@ impl Artifact {
             Artifact::Source(_) => None,
             Artifact::Tokens(_) => Some(Emit::Tokens),
             Artifact::Program(_) => Some(Emit::Ast),
+            Artifact::Typed(_) => None,
             Artifact::LlvmIr(_) => Some(Emit::LlvmIr),
             Artifact::Object(_) => Some(Emit::Object),
-            Artifact::Executable(_) => Some(Emit::Executable),
+            Artifact::Executable => Some(Emit::Executable),
         }
     }
 
-    fn advance(self, outputs: &Outputs) -> Result<Artifact, BuildError> {
+    fn advance(self, context: &BuildContext) -> Result<Artifact, BuildError> {
+        let input = || context.input.clone();
         Ok(match self {
             Artifact::Source(source) => {
                 let (tokens, errors) = lexer::tokenize(&source);
                 if !errors.is_empty() {
-                    return Err(BuildError::Lex(errors));
+                    return Err(BuildError::Lex {
+                        path: input(),
+                        errors,
+                    });
                 }
                 Artifact::Tokens(tokens)
             }
             Artifact::Tokens(tokens) => {
-                Artifact::Program(parser::parse_program(tokens).map_err(BuildError::Parse)?)
+                let program = parser::parse_program(tokens).map_err(|error| BuildError::Parse {
+                    path: input(),
+                    error,
+                })?;
+                Artifact::Program(program)
             }
             Artifact::Program(program) => {
-                let path = outputs.path(Emit::LlvmIr);
-                write(&path, &llvm::emit(&program).map_err(BuildError::Emit)?)?;
+                let typed = typecheck::check(program).map_err(|diagnostics| BuildError::Check {
+                    path: input(),
+                    diagnostics,
+                })?;
+                Artifact::Typed(typed)
+            }
+            Artifact::Typed(typed) => {
+                let path = context.path(Emit::LlvmIr);
+                let ir = llvm::emit(&typed.program).map_err(|error| BuildError::Emit {
+                    path: input(),
+                    error,
+                })?;
+                write(&path, &ir)?;
                 Artifact::LlvmIr(path)
             }
             Artifact::LlvmIr(ir) => {
-                let path = outputs.path(Emit::Object);
+                let path = context.path(Emit::Object);
                 toolchain::compile(&ir, &path, CodeFormat::Object)?;
                 Artifact::Object(path)
             }
             Artifact::Object(object) => {
-                let path = outputs.path(Emit::Executable);
+                let path = context.path(Emit::Executable);
                 toolchain::link(&object, &path)?;
-                Artifact::Executable(path)
+                Artifact::Executable
             }
-            Artifact::Executable(_) => unreachable!("an executable is the last artifact"),
+            Artifact::Executable => unreachable!("an executable is the last artifact"),
         })
     }
 }
 
-struct Outputs {
+struct BuildContext {
+    input: PathBuf,
     requested: Vec<Emit>,
     output: Option<PathBuf>,
     base: PathBuf,
@@ -168,7 +236,7 @@ struct Outputs {
     save_temps: bool,
 }
 
-impl Outputs {
+impl BuildContext {
     fn new(arguments: &BuildArguments) -> Result<Self, BuildError> {
         let requested = if arguments.emit.is_empty() {
             vec![Emit::Executable]
@@ -178,7 +246,8 @@ impl Outputs {
         if arguments.output.is_some() && requested.len() > 1 {
             return Err(BuildError::AmbiguousOutput);
         }
-        Ok(Outputs {
+        Ok(BuildContext {
+            input: arguments.input.clone(),
             requested,
             output: arguments.output.clone(),
             base: arguments
@@ -211,7 +280,7 @@ impl Outputs {
 
     fn emit(&mut self, artifact: &Artifact) -> Result<(), BuildError> {
         match artifact {
-            Artifact::Source(_) | Artifact::Executable(_) => {}
+            Artifact::Source(_) | Artifact::Typed(_) | Artifact::Executable => {}
             Artifact::Tokens(tokens) => {
                 if self.wants(Emit::Tokens) {
                     write(&self.path(Emit::Tokens), &token_listing(tokens))?;
@@ -240,7 +309,7 @@ impl Outputs {
     }
 }
 
-impl Drop for Outputs {
+impl Drop for BuildContext {
     fn drop(&mut self) {
         if self.save_temps {
             return;

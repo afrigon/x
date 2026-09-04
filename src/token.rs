@@ -192,6 +192,10 @@ impl TokenKind {
         })
     }
 
+    pub fn is_keyword(&self) -> bool {
+        TokenKind::keyword_from(self.describe()).as_ref() == Some(self)
+    }
+
     pub fn describe(&self) -> &'static str {
         use TokenKind::*;
         match self {

@@ -1392,4 +1392,5 @@ These are explicitly unsettled.
 | **Stdlib design** | Whole subject, post-language-design |
 | **`@bindings` header macro** | Deferred (see Header-binding macro); needs `@` → `#` re-classification alongside user-definable macros |
 | **Symbol mangling** | Scheme for compiler-chosen function symbols; module-qualified once modules exist |
+| **Shadowing** | Whether a `let` may reuse a name from the same scope or an enclosing one; the checker rejects the same scope and allows inner scopes until decided |
 | **Native variadic functions** | Whether `x` functions get a variadic form; candidate is Swift's array-sugar model, unrelated to the FFI `...` |

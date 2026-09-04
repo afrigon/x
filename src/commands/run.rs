@@ -16,7 +16,7 @@ impl fmt::Display for RunError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RunError::Execute { path, error } => {
-                write!(formatter, "cannot run {}: {error}", path.display())
+                write!(formatter, "error: cannot run {}: {error}", path.display())
             }
         }
     }
