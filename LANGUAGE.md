@@ -188,6 +188,20 @@ greet(name: "Alice")
 
 Functions and methods are identified by **name + ordered labels + parameter types**. Distinct signatures coexist; ambiguity is an error. **Exact match beats auto-wrap** (e.g., `T` overload preferred over `T?` overload).
 
+### Entry point
+
+```
+fun main() {
+    print("hello")
+}
+```
+
+- `main` takes no parameters. Command-line arguments are read through the standard library, so the caller chooses the allocator that holds them.
+- `fun main()` exits the process with status 0 when the body completes.
+- `main` may instead return a `Result` whose success type is unit and whose error type is `Displayable`. Returning `err` prints the error to stderr and exits with status 1. The spelling of that return type follows the unit-type decision (see Open decisions).
+- The compiler generates the platform entry point (the C `main`) only when the program declares `fun main`. A program without one — a kernel, a bootloader payload — exports its own entry through `@extern` (see FFI), and no runtime entry is generated.
+- A program declares at most one `main`, and user code cannot call it.
+
 ### Closures
 
 Anonymous functions use Swift-style braces with an `in` marker between params and body.
@@ -976,9 +990,21 @@ type Timespec {
     tv_sec:  i64
     tv_nsec: i64
 }
+
+// (4) Locally-defined function with foreign ABI — exported under its exact symbol
+@extern(.c, symbol: "_start")
+fun start() {
+    kernelMain()
+}
 ```
 
 ABI tags supported in v1: `.c`. Deferred: `.rust`, `.cpp` (require ABI knowledge / name mangling).
+
+### Exported functions and symbols
+
+Body presence decides the direction, as it does for types: an `@extern` function without a body is declared elsewhere, and one with a body is defined here. A defined `@extern` function uses the foreign calling convention and is exported under its own name, or under the `symbol:` argument. This is how interrupt handlers, bootloader entry points, and callbacks handed to C get the exact symbol the other side expects.
+
+Every other function has a compiler-chosen symbol that nothing outside the program may reference. Module visibility (see Modules and visibility) governs what other `x` modules can name; it says nothing about linker symbols.
 
 ### Variadic args
 
@@ -1343,3 +1369,4 @@ These are explicitly unsettled.
 | **C `int`/`long`/`size_t`** | Stdlib aliases module |
 | **Stdlib design** | Whole subject, post-language-design |
 | **`@bindings` header macro** | Deferred (see Header-binding macro); needs `@` → `#` re-classification alongside user-definable macros |
+| **Symbol mangling** | Scheme for compiler-chosen function symbols; module-qualified once modules exist |
