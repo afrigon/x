@@ -13,5 +13,6 @@ mise install
 ```sh
 mise run build
 mise run test
+mise run spec
 mise run x -- lex path/to/file.x
 ```
