@@ -1,7 +1,7 @@
 use crate::ast::{
-    Argument, AssignmentOperator, BinaryOperator, Declaration, DeclarationKind, Expression,
-    ExpressionKind, Function, Parameter, Precedence, Program, Statement, StatementKind, Type,
-    TypeKind, UnaryOperator,
+    Argument, AssignmentOperator, Attribute, BinaryOperator, Declaration, DeclarationKind,
+    Expression, ExpressionKind, Function, Parameter, Precedence, Program, Statement, StatementKind,
+    Type, TypeKind, UnaryOperator,
 };
 use crate::token::{Span, Token, TokenKind};
 use std::fmt;
@@ -230,7 +230,19 @@ impl Parser {
     }
 
     fn parse_call(&mut self, callee: Expression) -> Parse<Expression> {
-        self.advance();
+        let (arguments, close) = self.parse_argument_list()?;
+        let span = callee.span.to(close.span);
+        Ok(Expression::new(
+            ExpressionKind::Call {
+                callee: Box::new(callee),
+                arguments,
+            },
+            span,
+        ))
+    }
+
+    fn parse_argument_list(&mut self) -> Parse<(Vec<Argument>, Token)> {
+        self.expect(&TokenKind::LeftParenthesis, "`(`")?;
         self.skip_newlines();
         let mut arguments = Vec::new();
         while !self.check(&TokenKind::RightParenthesis) {
@@ -242,14 +254,7 @@ impl Parser {
             self.skip_newlines();
         }
         let close = self.expect(&TokenKind::RightParenthesis, "`)`")?;
-        let span = callee.span.to(close.span);
-        Ok(Expression::new(
-            ExpressionKind::Call {
-                callee: Box::new(callee),
-                arguments,
-            },
-            span,
-        ))
+        Ok((arguments, close))
     }
 
     fn parse_argument(&mut self) -> Parse<Argument> {
@@ -594,17 +599,50 @@ impl Parser {
     }
 
     fn parse_declaration(&mut self) -> Parse<Declaration> {
+        let attributes = self.parse_attributes()?;
         match self.current_kind() {
-            TokenKind::Fun => self.parse_function(),
-            other => Err(self.error_here(format!(
-                "expected a declaration, found {}",
-                other.describe()
-            ))),
+            TokenKind::Fun => self.parse_function(attributes),
+            other => {
+                let expected = if attributes.is_empty() {
+                    "a declaration"
+                } else {
+                    "a declaration after the attribute"
+                };
+                Err(self.error_here(format!("expected {expected}, found {}", other.describe())))
+            }
         }
     }
 
-    fn parse_function(&mut self) -> Parse<Declaration> {
-        let start = self.advance();
+    fn parse_attributes(&mut self) -> Parse<Vec<Attribute>> {
+        let mut attributes = Vec::new();
+        while self.check(&TokenKind::At) {
+            attributes.push(self.parse_attribute()?);
+            self.skip_newlines();
+        }
+        Ok(attributes)
+    }
+
+    fn parse_attribute(&mut self) -> Parse<Attribute> {
+        let at = self.advance();
+        let name = self.expect_identifier("an attribute name after `@`")?;
+        let (arguments, end) = if self.check(&TokenKind::LeftParenthesis) {
+            let (arguments, close) = self.parse_argument_list()?;
+            (arguments, close.span)
+        } else {
+            (Vec::new(), name.span)
+        };
+        Ok(Attribute {
+            name: identifier_name(name),
+            arguments,
+            span: at.span.to(end),
+        })
+    }
+
+    fn parse_function(&mut self, attributes: Vec<Attribute>) -> Parse<Declaration> {
+        let keyword = self.advance();
+        let start = attributes
+            .first()
+            .map_or(keyword.span, |attribute| attribute.span);
         let name = self.expect_identifier("a function name")?;
         self.expect(&TokenKind::LeftParenthesis, "`(` after the function name")?;
         let parameters = self.parse_parameters()?;
@@ -620,8 +658,9 @@ impl Parser {
             )));
         }
         let body = self.parse_block()?;
-        let span = start.span.to(body.span);
+        let span = start.to(body.span);
         Ok(Declaration {
+            attributes,
             kind: DeclarationKind::Function(Function {
                 name: identifier_name(name),
                 parameters,

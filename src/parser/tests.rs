@@ -407,3 +407,45 @@ fn underscore_needs_an_internal_name() {
 fn function_without_body_is_an_error() {
     assert!(program_error("fun f()").starts_with("expected `{` to begin the function body"));
 }
+
+#[test]
+fn bare_attribute() {
+    assert_eq!(s_program("@test fun f() {}"), "(@test) (fun f (block))\n");
+}
+
+#[test]
+fn attribute_with_arguments() {
+    assert_eq!(
+        s_program("@deprecated(\"use g\")\nfun f() {}"),
+        "(@deprecated \"use g\") (fun f (block))\n"
+    );
+    assert_eq!(
+        s_program(
+            r#"@extern(.c, link: "c", symbol: "puts")
+fun puts(_ text: *u8) -> i32 {}"#
+        ),
+        "(@extern .c link: \"c\" symbol: \"puts\") (fun puts (_ text: *u8) -> i32 (block))\n"
+    );
+}
+
+#[test]
+fn several_attributes_stack() {
+    assert_eq!(
+        s_program("@test\n@extern(.c)\nfun f() {}"),
+        "(@test) (@extern .c) (fun f (block))\n"
+    );
+}
+
+#[test]
+fn attribute_without_declaration_is_an_error() {
+    assert!(
+        program_error("@test\nlet x := 1\n")
+            .starts_with("expected a declaration after the attribute, found let")
+    );
+    assert!(program_error("@test").starts_with("expected a declaration after the attribute"));
+}
+
+#[test]
+fn attribute_needs_a_name() {
+    assert!(program_error("@(.c) fun f() {}").starts_with("expected an attribute name after `@`"));
+}
